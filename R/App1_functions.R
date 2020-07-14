@@ -173,8 +173,8 @@ preclean_phospho_df <- function(dfx){
     filter(is.na(Reverse),
                   is.na(Potential_contaminant)) %>%
     filter(Localization_prob > 0.75) %>%
-    select(id,Protein_group_IDs, matches("corrected.*[[:alpha:]].*\\_{3}[[:digit:]]$")) %>%
-    gather(Data_name, Intensity, matches("corrected.*[[:alpha:]].*\\_{3}[[:digit:]]$"))
+    select(id,Protein_group_IDs, matches("\\_{3}[[:digit:]]$")) %>%
+    gather(Data_name, Intensity, matches("\\_{3}[[:digit:]]$"))
 
   #Summarizes all phos_number columns into single Intensity for each phosphosite
   df2 <- df %>%
