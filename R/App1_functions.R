@@ -446,6 +446,21 @@ make_boxplot2 <- function(dfx, sampleTable){
     theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 9))
 }
 
+make_CV_histogram <- function(x1, samples = NULL, unlog = FALSE) {
+  if(unlog) {
+    x1 <- x1 %>%
+      mutate(Intensity = 2^Intensity)
+  }
+  if(!is.null(samples)){
+    x1 <- x1[x1$Sample_name %in% samples,]
+  }
+  
+  x1 %>%
+    group_by(id) %>%
+    summarize(CV = sd(Intensity, na.rm = TRUE) / mean(Intensity, na.rm = TRUE)) %>%
+    ggplot(aes(x = CV)) + geom_histogram(bins = 100)
+}
+
 
 PCA_plotly <- function(dfx, sampleTable){
   a1 <- na.omit(dfx)
