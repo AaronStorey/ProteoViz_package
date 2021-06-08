@@ -9,8 +9,6 @@
 #' @import heatmaply
 #' @import UpSetR
 #' @export
-#'
-
 runApp2 <- function(){
   theme_set(theme_cowplot())
   options(shiny.maxRequestSize = 5000*1024^2)
@@ -188,6 +186,7 @@ runApp2 <- function(){
         width = 12,
         fluidRow(
           column(2, checkboxInput("phcheck", label = "Plot heatmap")),
+          column(2, checkboxInput("phscalecheck", label = "Scale Rows")),
           column(4, selectInput("proteinHeatGroupExclude", label = "Exclude groups:",
                                 choices = character(0), multiple = TRUE))
         ),
@@ -718,7 +717,7 @@ runApp2 <- function(){
       req(group_order())
       req(selected_data())
 
-      makeProteinHeatHeatmap(selected_data(), metadata(), sample_order(), group_order(), excluded_groups())
+      makeProteinHeatHeatmap(selected_data(), metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
     })
 
 

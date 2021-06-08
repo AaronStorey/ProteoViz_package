@@ -141,7 +141,7 @@ makeSummary3 <- function(quantData, combinedData, metaData, prefix){
     write_tsv(paste0(prefix, "_Summarized_output.tsv"))
 }
 
-makeProteinHeatHeatmap <- function(selectData, metaData, sampleOrder, groupOrder, groupexclude = NULL) {
+makeProteinHeatHeatmap <- function(selectData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
 
   protein_df <- metaData
 
@@ -163,16 +163,32 @@ makeProteinHeatHeatmap <- function(selectData, metaData, sampleOrder, groupOrder
 
   #Rearrange based on sample table order
   p1 <- p[,sample_order1]
+  
+  # #Scale based on phscalecheck checkbox
+  # scale_rows <- ifelse(scaleRows, "row", "none")
 
   #Column color annotations
+  
+  if(scaleRows) {
+    p1 %>%
+      heatmaply(
+        scale = "row",
+        scale_fill_gradient_fun = scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                                                       midpoint = 0, name = "log2 FC"),
+        Colv = FALSE,
+        col_side_colors = group_order1
+        
+      )
+  } else {
+    
+    p1 %>%
+      heatmaply(
+        scale = "none",
+        Colv = FALSE,
+        col_side_colors = group_order1
+        
+      )
+  }
 
-  p1 %>%
-    heatmaply(
-      scale = "row",
-      scale_fill_gradient_fun = scale_fill_gradient2(low = "blue", mid = "white", high = "red",
-                                                     midpoint = 0, name = "log2 FC"),
-      Colv = FALSE,
-      col_side_colors = group_order1
-
-    )
+  
 }
