@@ -17,5 +17,6 @@ Depends:
     heatmaply,
     shiny,
     cowplot,
+    UpSetR,
     plotly
 RoxygenNote: 7.1.0
