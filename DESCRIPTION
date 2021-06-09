@@ -17,6 +17,5 @@ Depends:
     heatmaply,
     shiny,
     cowplot,
-    plotly,
-    ComplexHeatmap
+    plotly
 RoxygenNote: 7.1.0
