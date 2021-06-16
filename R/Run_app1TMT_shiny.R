@@ -12,7 +12,7 @@
 #' @import cowplot
 #' @import plotly
 #' @export
-runApp1TMT <- function(){
+runApp1TMT <- function(options = list()){
 
   theme_set(theme_cowplot())
   options(shiny.maxRequestSize = 5000*1024^2)
@@ -844,5 +844,5 @@ runApp1TMT <- function(){
 
   }
 
-  shinyApp(ui, server)
+  shinyApp(ui, server, options = options)
 }

@@ -9,7 +9,7 @@
 #' @import heatmaply
 #' @import UpSetR
 #' @export
-runApp2 <- function(){
+runApp2 <- function(options = list()){
   theme_set(theme_cowplot())
   options(shiny.maxRequestSize = 5000*1024^2)
 
@@ -727,6 +727,6 @@ runApp2 <- function(){
 
   }
 
-  shinyApp(ui, server)
+  shinyApp(ui, server, options = options)
 }
 
