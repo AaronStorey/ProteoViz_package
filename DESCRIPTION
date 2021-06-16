@@ -15,6 +15,7 @@ Depends:
     shinydashboard,
     rhandsontable,
     limma,
+    ComplexHeatmap,
     heatmaply,
     shiny,
     cowplot,
