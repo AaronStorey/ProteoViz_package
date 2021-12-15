@@ -207,7 +207,7 @@ runApp2 <- function(options = list()){
                           fluidRow(column(3, textInput("peptideWidth", "Width", value = 8)),
                                    column(3, textInput("peptideHeight", "Height", value = 6)),
                                    column(3, textInput("peptideDpi", "dpi", value = 300)),
-                                   column(3, textInput("peptideFileName", "Filename", value = ""))),
+                                   column(3, textInput("peptideFileName", "Filename", value = "Plot"))),
                           fluidRow(column(3, sliderInput("peptideXLabels", "X-axis label size", min = 4, max = 16, value = 10, step = 1)),
                                    column(3, sliderInput("peptideXAngle", "X-axis label angle", min = 0, max = 90, value = 45, step =5)),
                                    column(3, sliderInput("peptideYLabels", "Y-axis label size", min = 4, max = 16, value = 10, step = 1))),
