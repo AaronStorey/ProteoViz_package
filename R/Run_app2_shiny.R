@@ -17,9 +17,15 @@ runApp2 <- function(options = list()){
 
   # Limma tab --------------------------------------------------------------
 
-
-
-
+  Box0 <- {
+    fluidRow(
+      box(
+        width = 12,
+        fileInput("allUpload", "Upload multiple files", multiple = TRUE)
+      )
+    )
+  }
+  
   Box1 <- {
     fluidRow(
       box(
@@ -31,6 +37,23 @@ runApp2 <- function(options = list()){
       )
     )
   }
+  
+  Box0_1 <- {
+    fluidRow(
+      tabBox(id = "fileInputTab", width = 12,
+             tabPanel("Upload multiple files",
+                      fileInput("allUpload", "Upload multiple files", multiple = TRUE)),
+             tabPanel("Upload individual files",
+                      fileInput("quantData", "Import quantitative data"),
+                      fileInput("metadata", "Import metadata"),
+                      fileInput("peptideQuantData", "Import peptide quantitative data"),
+                      fileInput("peptideMetaData", "Import peptide metadata"))
+             )
+    )
+  }
+
+
+
 
   Box2 <- {
     fluidRow(
@@ -134,7 +157,9 @@ runApp2 <- function(options = list()){
 
   Limma_tab <- {
     tabItem("Limma",
-            Box1,
+            # Box0,
+            # Box1,
+            Box0_1,
             Box2,
             # Box3,
             # Box4,
@@ -256,16 +281,39 @@ runApp2 <- function(options = list()){
 
     ##################################### Limma ----------------------------------
     # Normalized data ---------------------------------------------------------
+    
+
     quant_data <- reactive({
+      if(isTruthy(input$allUpload)){
+        a <- as_tibble(input$allUpload) %>%
+          filter(grepl("protein\\_quantitative\\_data", name))
+        if(nrow(a) == 1){
+          return(read_tsv(a$datapath))
+        }
+        
+      } 
+      
       req(input$quantData)
       df <- input$quantData$datapath
       read_tsv(df)
+      
     })
     
+
+    
     peptide_quant_data <- reactive({
+      if(isTruthy(input$allUpload)){
+        a <- as_tibble(input$allUpload) %>%
+          filter(grepl("peptide\\_quantitative\\_data", name))
+        if(nrow(a) == 1){
+          return(read_tsv(a$datapath))
+        }
+      } 
+      
       req(input$peptideQuantData)
       df <- input$peptideQuantData$datapath
       read_tsv(df)
+      
     })
 
     limma_input <- reactive({
@@ -279,34 +327,104 @@ runApp2 <- function(options = list()){
 
     # Metadata ----------------------------------------------------------------
 
+    # metadata <- reactive({
+    #   req(input$metadata)
+    #   if(isTruthy(input$metadata)){
+    #     df <- input$metadata
+    #     read_tsv(df$datapath)
+    #   }
+    # })
+    # 
+    # peptide_metadata <- reactive({
+    #   req(input$peptideMetaData)
+    #   if(isTruthy(input$peptideMetaData)){
+    #     df <- input$peptideMetaData
+    #     read_tsv(df$datapath)
+    #   }
+    # })
+
     metadata <- reactive({
-      req(input$metadata)
-      if(isTruthy(input$metadata)){
-        df <- input$metadata
-        read_tsv(df$datapath)
+      if(isTruthy(input$allUpload)){
+        a <- as_tibble(input$allUpload) %>%
+          filter(grepl("protein\\_metadata", name))
+        if(nrow(a) == 1){
+         return(read_tsv(a$datapath)) 
+        }
+        
       }
+      
+      req(input$metadata)
+      df <- input$metadata
+      read_tsv(df$datapath)
+
     })
     
     peptide_metadata <- reactive({
+      if(isTruthy(input$allUpload)){
+        a <- as_tibble(input$allUpload) %>%
+          filter(grepl("peptide\\_metadata", name))
+        if(nrow(a) == 1){
+          return(read_tsv(a$datapath))
+          }
+
+      } 
+      
       req(input$peptideMetaData)
-      if(isTruthy(input$peptideMetaData)){
-        df <- input$peptideMetaData
-        read_tsv(df$datapath)
-      }
+      df <- input$peptideMetaData
+      read_tsv(df$datapath)
+      
     })
-
-
 
 
     # Sample table ------------------------------------------------------------
 
 
+    # sampleNameTable <- reactive({
+    #   
+    #   if (isTruthy(input$sampleFile)) {
+    #     col_check <- c("Sample_name", "Group", "Batch", "Block")
+    #     
+    #     read_tsv(input$sampleFile$datapath) %>%
+    #       select(one_of(col_check)) %>%
+    #       mutate(Batch = as.integer(Batch)) %>%
+    #       rhandsontable() %>%
+    #       hot_col("Sample_name", readOnly = T)
+    #   } else if(isTruthy(quant_data())){
+    #     quant_column_names <- quant_data() %>%
+    #       dplyr::select(-id) %>%
+    #       colnames()
+    #     tibble(Sample_name = quant_column_names,
+    #            Group = "",
+    #            Batch = "",
+    #            Block = ""
+    #     ) %>%
+    #       as.data.frame() %>%
+    #       rhandsontable() %>%
+    #       hot_col("Sample_name", readOnly = T)
+    #   }
+    # 
+    # 
+    # })
+    
     sampleNameTable <- reactive({
-
+      col_check <- c("Sample_name", "Group", "Batch", "Block")
+      
+      if(isTruthy(input$allUpload)){
+        a <- as_tibble(input$allUpload) %>%
+          filter(grepl("design\\_table", name))
+        if(nrow(a) > 0){
+          a1 <- read_tsv(a$datapath) %>%
+            select(one_of(col_check)) %>%
+            mutate(Batch = as.integer(Batch)) %>%
+            rhandsontable() %>%
+            hot_col("Sample_name", readOnly = T)
+          return(a1)
+        }
+      }
+      
       if (isTruthy(input$sampleFile)) {
-
-        col_check <- c("Sample_name", "Group", "Batch", "Block")
-
+        
+        
         read_tsv(input$sampleFile$datapath) %>%
           select(one_of(col_check)) %>%
           mutate(Batch = as.integer(Batch)) %>%
@@ -325,8 +443,8 @@ runApp2 <- function(options = list()){
           rhandsontable() %>%
           hot_col("Sample_name", readOnly = T)
       }
-
-
+      
+      
     })
 
     # Outputs the Rhandsontable
@@ -462,7 +580,17 @@ runApp2 <- function(options = list()){
 
 
     output$T3 <- renderRHandsontable({
-
+      
+      if(isTruthy(input$allUpload)){
+        a <- as_tibble(input$allUpload) %>%
+          filter(grepl("contrast\\_list", name))
+        if(nrow(a) == 1){
+          a1 <- read_tsv(a$datapath) %>%
+            as.data.frame() %>%
+            rhandsontable()
+          return(a1)
+        }
+      }
       if(isTruthy(input$contrastFile)){
         #File import
         df <- input$contrastFile$datapath
@@ -867,6 +995,10 @@ runApp2 <- function(options = list()){
 
 
     # -------------------------------------------------------------------------
+
+# Debugging/scraps/tests --------------------------------------------------
+
+    ####
 
 
   }
