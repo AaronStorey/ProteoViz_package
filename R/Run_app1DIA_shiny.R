@@ -31,7 +31,8 @@ runApp1DIA <- function(options = list()){
       box(
         width = 12,
         textInput("projectName", "Project name", value = "Demo", width = "50%"),
-        fileInput("proteinFile", "Samples Report"),
+        fileInput("proteinFile", "Protein Samples Report"),
+        fileInput("peptideFile", "Peptide Quant Report"),
         fileInput("sampleFile", "Import sample file"),
         rHandsontableOutput("sampleNameTable"),
         br(),
@@ -91,6 +92,7 @@ runApp1DIA <- function(options = list()){
       box(
         title = "Required number of observations for each group:",
         width = 12,
+        fluidRow(column(12, checkboxInput("NaP3checkbox", "Plot missing values", value = FALSE))),
         fluidRow(column(12, uiOutput("groupSlider"))),
         plotOutput("NaP3")
       )
@@ -163,6 +165,16 @@ runApp1DIA <- function(options = list()){
       )
     )
   }
+  
+  Box7 <- {
+    fluidRow(
+      box(
+        width = 6,
+        column(6, actionButton("P1peptidedfbutton", "Save peptide quantitative table")),
+        column(6, actionButton("savePeptideMeta", "Save peptide metadata"))
+      )
+    )
+  }
 
   ProteinNorm_tab <- {
     tabItem("ProteinNorm",
@@ -170,7 +182,8 @@ runApp1DIA <- function(options = list()){
             Box4,
             Box4_5,
             Box5,
-            Box6)
+            Box6,
+            Box7)
   }
 
 
@@ -207,14 +220,12 @@ runApp1DIA <- function(options = list()){
         readSampleNameTable(input$sampleFile$datapath) %>%
           rhandsontable() %>%
           hot_col("Data_name", readOnly = T)
-      } else if(isTruthy(protein_df())){
+      } else if (isTruthy(protein_df())){
         makeSampleNameTable(protein_df(), type = type) %>%
           as.data.frame() %>%
           rhandsontable() %>%
           hot_col("Data_name", readOnly = T)
       }
-
-
     })
 
     # Outputs the Rhandsontable
@@ -323,11 +334,25 @@ runApp1DIA <- function(options = list()){
 
     #Import
     protein_df <- reactive({
-      x1 <- input$proteinFile
-      if(isTruthy(x1)){
-        #Import, replace spaces with underscores
+      if(isTruthy(input$proteinFile)){
+        x1 <- input$proteinFile
+        req(input$proteinFile)
         readSamplesReport(x1$datapath, type)
+      } else if(isTruthy(input$peptideFile)){
+
+        x1 <- input$peptideFile
+        req(input$peptideFile)
+        readPeptideReport(x1$datapath, type)
       }
+
+      
+      
+      # if(isTruthy(x1)){
+      #   #Import, replace spaces with underscores
+      #   x2 <- readSamplesReport(x1$datapath, type)
+      #   x2
+      # }
+      
     })
 
     #Exclude samples, tidy, transform (log2, remove 0s, NormalizeRefs)
@@ -407,8 +432,9 @@ runApp1DIA <- function(options = list()){
     output$NaP3 <- renderPlot({
       req(protein_df3())
       req(sampleNameTable3())
-
-      make_NA_plot(protein_df3(), sampleNameTable3())
+      if(input$NaP3checkbox){
+        make_NA_plot(protein_df3(), sampleNameTable3())
+      }
     })
 
 
@@ -441,12 +467,26 @@ runApp1DIA <- function(options = list()){
       req(sampleNameTable3())
       save_quantitative_data(protein_df6(), input$projectName, sampleNameTable3(), "protein")
     })
+    
+    observeEvent(input$P1peptidedfbutton, {
+      req(input$projectName)
+      req(protein_df6())
+      req(sampleNameTable3())
+      save_quantitative_data(protein_df6(), input$projectName, sampleNameTable3(), "peptide")
+    })
 
     observeEvent(input$saveProteinMeta, {
       req(protein_df())
       req(input$projectName)
 
       save_protein_meta(protein_df(), input$projectName, type)
+    })
+    
+    observeEvent(input$savePeptideMeta, {
+      req(protein_df())
+      req(input$projectName)
+      
+      save_peptide_meta(protein_df(), input$projectName, type)
     })
 
     observeEvent(input$saveDesignTable, {

@@ -192,3 +192,166 @@ makeProteinHeatHeatmap <- function(selectData, metaData, sampleOrder, groupOrder
 
   
 }
+
+makePeptideHeatHeatmap <- function(clickData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
+  
+  peptide_df <- metaData
+  
+  p <- clickData %>%
+    left_join(select(peptide_df, id, Sequence, Charge), by = "id") %>%
+    mutate(Description = str_c(Sequence, Charge, sep = "_")) %>%
+    select(Description, one_of(names(clickData))) %>%
+    as.data.frame() %>%
+    column_to_rownames("Description")
+  
+  #Exclude samples belonging to indicated groups
+  sample_order1 <- sampleOrder
+  group_order1 <- groupOrder
+  
+  if(isTruthy(groupexclude)){
+    sample_order1 <- sample_order1[!group_order1 %in% groupexclude]
+    group_order1 <- group_order1[!group_order1 %in% groupexclude]
+  }
+  
+  #Rearrange based on sample table order
+  p1 <- p[,sample_order1]
+  
+  # #Scale based on phscalecheck checkbox
+  # scale_rows <- ifelse(scaleRows, "row", "none")
+  
+  #Column color annotations
+  
+  if(scaleRows) {
+    p1 %>%
+      heatmaply(
+        scale = "row",
+        scale_fill_gradient_fun = scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                                                       midpoint = 0, name = "log2 FC"),
+        Colv = FALSE,
+        col_side_colors = group_order1
+        
+      )
+  } else {
+    
+    p1 %>%
+      heatmaply(
+        scale = "none",
+        Colv = FALSE,
+        col_side_colors = group_order1
+        
+      )
+  }
+  
+  
+}
+
+makePeptideHeatHeatmap2 <- function(clickData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
+  
+  peptide_df <- metaData
+  
+  p <- clickData %>%
+    left_join(select(peptide_df, id, Sequence, Charge), by = "id") %>%
+    mutate(Description = str_c(Sequence, Charge, sep = "_")) %>%
+    select(Description, one_of(names(clickData))) %>%
+    gather(Sample, Intensity, -Description) %>%
+    rename(Sequence = Description) %>%
+    spread(Sample, Intensity, fill = 0) %>%
+    gather(Sample, Intensity, -Sequence)
+  
+  #Exclude samples belonging to indicated groups
+  sample_order1 <- sampleOrder
+  group_order1 <- groupOrder
+  
+  if(isTruthy(groupexclude)){
+    sample_order1 <- sample_order1[!group_order1 %in% groupexclude]
+    group_order1 <- group_order1[!group_order1 %in% groupexclude]
+  }
+  
+  #Rearrange based on sample table order
+  p1 <- p %>%
+    filter(Sample %in% sample_order1) %>%
+    mutate(Sample = factor(Sample, levels = sample_order1))
+  
+  #Column color annotations
+  
+  if(scaleRows) {
+    p1 %>%
+      filter(Intensity >0) %>%
+      group_by(Sequence) %>%
+      mutate(Intensity = (Intensity - mean(Intensity, na.rm = TRUE))) %>%
+      ggplot(aes(x = Sample, y = Sequence, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
+      scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                           na.value = "white",
+                           midpoint = 0, name = "log2 Relative Intensity") +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1))
+    
+  } else {
+    p1 %>%
+    filter(Intensity >0) %>%
+      ggplot(aes(x = Sample, y = Sequence, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
+      scale_fill_viridis_c(name = "log2 Intensity", na.value = "white") +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  }
+  
+  
+}
+
+#For saving plots
+
+
+makePeptideHeatHeatmap3 <- function(clickData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows,
+                                    xlabelsize = 10, xangle = 45, ylabelsize = 10, xtitlesize = 12, ytitlesize = 12) {
+  
+  peptide_df <- metaData
+  
+  p <- clickData %>%
+    left_join(select(peptide_df, id, Sequence, Charge), by = "id") %>%
+    mutate(Description = str_c(Sequence, Charge, sep = "_")) %>%
+    select(Description, one_of(names(clickData))) %>%
+    gather(Sample, Intensity, -Description) %>%
+    rename(Sequence = Description) %>%
+    spread(Sample, Intensity, fill = 0) %>%
+    gather(Sample, Intensity, -Sequence)
+  
+  #Exclude samples belonging to indicated groups
+  sample_order1 <- sampleOrder
+  group_order1 <- groupOrder
+  
+  if(isTruthy(groupexclude)){
+    sample_order1 <- sample_order1[!group_order1 %in% groupexclude]
+    group_order1 <- group_order1[!group_order1 %in% groupexclude]
+  }
+  
+  #Rearrange based on sample table order
+  p1 <- p %>%
+    filter(Sample %in% sample_order1) %>%
+    mutate(Sample = factor(Sample, levels = sample_order1))
+  
+  #Column color annotations
+  
+  if(scaleRows) {
+    p1 %>%
+      filter(Intensity >0) %>%
+      group_by(Sequence) %>%
+      mutate(Intensity = (Intensity - mean(Intensity, na.rm = TRUE))) %>%
+      ggplot(aes(x = Sample, y = Sequence, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
+      scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                           na.value = "white",
+                           midpoint = 0, name = "log2 Relative Intensity") +
+      theme(axis.text.x = element_text(size = xlabelsize, angle = xangle, hjust = 1),
+            axis.text.y = element_text(size = ylabelsize),
+            axis.title.x = element_text(size = xtitlesize),
+            axis.title.y = element_text(size = ytitlesize))
+    
+    
+  } else {
+    p1 %>%
+      filter(Intensity >0) %>%
+      ggplot(aes(x = Sample, y = Sequence, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
+      scale_fill_viridis_c(name = "log2 Intensity", na.value = "white") +
+      theme(axis.text.x = element_text(size = xlabelsize, angle = xangle, hjust = 1),
+            axis.text.y = element_text(size = ylabelsize),
+            axis.title.x = element_text(size = xtitlesize),
+            axis.title.y = element_text(size = ytitlesize))
+  }
+}

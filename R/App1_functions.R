@@ -6,24 +6,55 @@
 readSamplesReport <- function(filePath, type){
 
   if (type == "DIA"){
-    #The file will contain a variable number of uncommented metadata.  This reads the first 100 lines,
-    #Finds the column row and sets skip value to that - 1.
+    #Read peptide quant report
+    a <- read.csv(filePath, nrows = 1)
     first_read <- readLines(filePath)
     file_length <- length(first_read)
-    skip_number <- grep("Visible", first_read) - 1
-
-    read_csv(filePath, skip = skip_number, na = c("", "Missing Value"), n_max = file_length - skip_number - 2) %>%
-      {purrr::set_names(., gsub(" ", "_", names(.)))} %>%
-      filter(!is.na(Visible)) %>% #Removes END OF FILE line
-      rename(id = `#`) %>%
-      filter(!grepl("\\.", id)) %>% #Removes protein clusters, keeps protein group
-      filter(!grepl("DECOY", Protein_Name))
+    quant_columns <- names(a)[a == "Quant. Intensity"]
+    cols1 <- c(1:6,grep("Intensity", a))
+    cols2 <- c(as.character(a[1:6]), quant_columns)
+    
+    # a1 <- read_csv(filePath, skip = 2, col_names = FALSE, n_max = file_length - 3) %>%
+    #   select(cols1) %>%
+    #   set_names(cols2) %>%
+    #   {set_names(., gsub(" ", "_", names(.)))} %>%
+    #   mutate(id = as.double(rownames(.)))
+    # 
+    # a1
+    a3 <- read.csv(filePath, skip = 2, header = FALSE)
+    a4 <- a3[,cols1]
+    names(a4) <- cols2
+    as_tibble(a4)
   } else if (type == "TMT"){
-    read_tsv(filePath, guess_max = 10000) %>%
-      {purrr::set_names(., gsub(" ", "_", names(.)))}
+      read_tsv(filePath, guess_max = 10000) %>%
+        {purrr::set_names(., gsub(" ", "_", names(.)))}
   }
 
 }
+
+readPeptideReport <- function(filePath, type){
+  a <- read.csv(filePath, nrows = 1)
+  first_read <- readLines(filePath)
+  file_length <- length(first_read)
+  quant_columns <- names(a)[a == "Quant. Intensity"]
+  cols1 <- c(1:6,grep("Intensity", a))
+  cols2 <- c(as.character(a[1:6]), quant_columns)
+  
+  a1 <- read_csv(filePath, skip = 2, col_names = FALSE) %>%
+    select(cols1) %>%
+    set_names(cols2) %>%
+    {set_names(., gsub(" ", "_", names(.)))} %>%
+    mutate(id = as.double(rownames(.)))
+
+  a1
+  # a3 <- read.csv(filePath, skip = 2, header = FALSE)
+  # a4 <- a3[,cols1]
+  # names(a4) <- cols2
+  # as_tibble(a4)
+  
+  
+}
+
 make_observation_required_table <- function(group_table, x1){
   if(tibble::is_tibble(x1)){
     df1 <-  group_table %>%
@@ -304,6 +335,15 @@ makeProteinMeta <- function(x, type){
   }
 
 }
+
+makePeptideMeta <- function(x, type){
+  
+  if (type == "DIA"){
+    x %>%
+      select(id, Sequence, Modifications, Charge, Protein_Accessions, Precursor_MZ, Global_Posterior_Error_Probability)
+  }
+}
+
 makePhosphoMeta <- function(x){
 
   x %>%
@@ -322,6 +362,14 @@ save_protein_meta <- function(dfx, projectName, type) {
   makeProteinMeta(dfx, type)  %>%
     write_tsv(paste0(projectName, "/", file_prefix, "_", "protein_metadata.tsv"))
 }
+
+save_peptide_meta <- function(dfx, projectName, type) {
+  if(!dir.exists(projectName)) dir.create(projectName, recursive = TRUE)
+  file_prefix <- gsub("^.*\\/", "", projectName)
+  
+  makePeptideMeta(dfx, type)  %>%
+    write_tsv(paste0(projectName, "/", file_prefix, "_", "peptide_metadata.tsv"))
+}
 save_phospho_meta <- function(dfx, projectName, normToProtein = TRUE, proteinmatchdf = NULL){
 
   df <- makePhosphoMeta(dfx)
@@ -335,17 +383,29 @@ save_phospho_meta <- function(dfx, projectName, normToProtein = TRUE, proteinmat
   df %>%
     write_tsv(paste0(projectName, "/", file_prefix, "_", "phospho_metadata.tsv"))
 }
+
 save_quantitative_data <- function(dfx, projectName, sample_table, dataType = "protein"){
   if(!dir.exists(projectName)) dir.create(projectName, recursive = TRUE)
   file_prefix <- gsub("^.*\\/", "", projectName)
-  dfx %>%
-    select(id, Sample_name, Intensity) %>%
-    mutate(Sample_name = factor(Sample_name, levels = unique(sample_table$Sample_name))) %>%
-    spread(Sample_name, Intensity) %>%
-    mutate(id = as.integer(id)) %>%
-    arrange(id) %>%
-    write_tsv(paste0(projectName, "/", file_prefix, "_", dataType, "_", "quantitative_data.tsv"))
+  if (dataType == "protein"){
+    dfx %>%
+      select(id, Sample_name, Intensity) %>%
+      mutate(Sample_name = factor(Sample_name, levels = unique(sample_table$Sample_name))) %>%
+      spread(Sample_name, Intensity) %>%
+      mutate(id = as.integer(id)) %>%
+      arrange(id) %>%
+      write_tsv(paste0(projectName, "/", file_prefix, "_", dataType, "_", "quantitative_data.tsv"))
+  } else if (dataType == "peptide"){
+    dfx %>%
+      select(id, Sample_name, Intensity) %>%
+      mutate(Sample_name = factor(Sample_name, levels = unique(sample_table$Sample_name))) %>%
+      spread(Sample_name, Intensity) %>%
+      mutate(id = as.integer(id)) %>%
+      arrange(id) %>%
+      write_tsv(paste0(projectName, "/", file_prefix, "_", dataType, "_", "peptide_quantitative_data.tsv"))
+  }
 }
+
 save_design_table <- function(sampleTable, projectName){
   if(!dir.exists(projectName)) dir.create(projectName, recursive = TRUE)
   file_prefix <- gsub("^.*\\/", "", projectName)

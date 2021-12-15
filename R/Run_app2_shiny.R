@@ -25,7 +25,9 @@ runApp2 <- function(options = list()){
       box(
         width = 12,
         fileInput("quantData", "Import quantitative data"),
-        fileInput("metadata", "Import metadata")
+        fileInput("metadata", "Import metadata"),
+        fileInput("peptideQuantData", "Import peptide quantitative data"),
+        fileInput("peptideMetaData", "Import peptide metadata")
       )
     )
   }
@@ -196,7 +198,23 @@ runApp2 <- function(options = list()){
                  tabPanel("Select proteins",
                           plotlyOutput("proteinHeat", height = "900px")),
                  tabPanel("Summarized",
-                          plotlyOutput("ProteinHeatAverage", height = "900px"))
+                          plotlyOutput("ProteinHeatAverage", height = "900px")),
+                 tabPanel("Peptide plotly heatmap",
+                          plotlyOutput("peptideHeat", height = "900px"),
+                          tableOutput("peptide1"),
+                          tableOutput("peptide2")),
+                 tabPanel("Peptide ggplot heatmap",
+                          fluidRow(column(3, textInput("peptideWidth", "Width", value = 8)),
+                                   column(3, textInput("peptideHeight", "Height", value = 6)),
+                                   column(3, textInput("peptideDpi", "dpi", value = 300)),
+                                   column(3, textInput("peptideFileName", "Filename", value = ""))),
+                          fluidRow(column(3, sliderInput("peptideXLabels", "X-axis label size", min = 4, max = 16, value = 10, step = 1)),
+                                   column(3, sliderInput("peptideXAngle", "X-axis label angle", min = 0, max = 90, value = 45, step =5)),
+                                   column(3, sliderInput("peptideYLabels", "Y-axis label size", min = 4, max = 16, value = 10, step = 1))),
+                          fluidRow(column(3, sliderInput("peptideXTitle", "X-axis title size", min = 0, max = 25, value = 12, step = 1)),
+                                   column(3, sliderInput("peptideYTitle", "Y-axis title size", min = 0, max = 25, value = 12, step = 1))),
+                          fluidRow(column(3, downloadButton("peptideButton", "Download plot"))),
+                          plotOutput("peptideHeat2", height = "900px"))
           )
         )
       )
@@ -243,6 +261,12 @@ runApp2 <- function(options = list()){
       df <- input$quantData$datapath
       read_tsv(df)
     })
+    
+    peptide_quant_data <- reactive({
+      req(input$peptideQuantData)
+      df <- input$peptideQuantData$datapath
+      read_tsv(df)
+    })
 
     limma_input <- reactive({
       req(quant_data())
@@ -259,6 +283,14 @@ runApp2 <- function(options = list()){
       req(input$metadata)
       if(isTruthy(input$metadata)){
         df <- input$metadata
+        read_tsv(df$datapath)
+      }
+    })
+    
+    peptide_metadata <- reactive({
+      req(input$peptideMetaData)
+      if(isTruthy(input$peptideMetaData)){
+        df <- input$peptideMetaData
         read_tsv(df$datapath)
       }
     })
@@ -354,7 +386,7 @@ runApp2 <- function(options = list()){
       req(design_table2())
       req(contrast_table())
 
-      makeContrastTable(design_table2(), contrast_table())
+      try(makeContrastTable(design_table2(), contrast_table()), silent = TRUE)
     })
 
 
@@ -708,6 +740,43 @@ runApp2 <- function(options = list()){
       quant_data() %>%
         filter(id %in% d$key)
     })
+    
+    peptide_click_data <- reactive({
+      req(quant_data())
+      req(metadata())
+      req(peptide_metadata())
+      d <- event_data("plotly_click", source = "proteinVolcano")
+      req(!is.null(d))
+      
+      protein_id <- metadata() %>%
+        filter(id %in% d$key)
+      
+      peptide_metadata() %>%
+        filter(Protein_Accessions %in% protein_id$Accession_Number)
+      
+    })
+    
+    peptide_click_table <- reactive({
+      req(peptide_click_data())
+      req(peptide_quant_data())
+      
+      peptide_quant_data() %>%
+        filter(id %in% peptide_click_data()$id)
+      
+    })
+    
+    output$peptide1 <- renderTable({
+      req(peptide_click_data())
+      req(metadata())
+      peptide_click_data()
+      
+    })
+    
+    output$peptide2 <- renderTable({
+      req(peptide_click_table())
+      peptide_click_table()
+      
+    })
 
     output$proteinHeat <- renderPlotly({
       req(input$phcheck)
@@ -719,6 +788,81 @@ runApp2 <- function(options = list()){
 
       makeProteinHeatHeatmap(selected_data(), metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
     })
+    
+    output$peptideHeat <- renderPlotly({
+      req(input$phcheck)
+      req(peptide_click_table())
+      req(peptide_metadata())
+      req(sample_order())
+      req(group_order())
+      
+      makePeptideHeatHeatmap(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+    })
+    
+    output$peptideHeat2 <- renderPlot({
+      req(input$phcheck)
+      req(peptide_click_table())
+      req(peptide_metadata())
+      req(sample_order())
+      req(group_order())
+      
+      makePeptideHeatHeatmap2(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+    })
+    
+    
+    
+    peptide2Plot <- reactive({
+      req(input$phcheck)
+      req(peptide_click_table())
+      req(peptide_metadata())
+      req(sample_order())
+      req(group_order())
+      
+      makePeptideHeatHeatmap2(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+    })
+    
+
+    
+    # output$peptideButton <- downloadHandler(
+    #   filename = function() {paste(input$peptideFileName, '.tiff', sep='') },
+    #   content = function(file) {
+    #     width1 = as.numeric(input$peptideWidth)
+    #     height1 = as.numeric(input$peptideHeight)
+    #     dpi1 = as.numeric(input$peptideDpi)
+    #     
+    #     ggsave(file,
+    #            plot = makePeptideHeatHeatmap2(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck),
+    #            width = width1,
+    #            height = height1,
+    #            device = "tiff",
+    #            compression = "lzw")
+    #   },
+    #   contentType = "image/tiff"
+    # )
+    
+    output$peptideButton <- downloadHandler(
+      filename = function() {paste(input$peptideFileName, '.tiff', sep='') },
+      content = function(file) {
+        width1 = as.numeric(input$peptideWidth)
+        height1 = as.numeric(input$peptideHeight)
+        dpi1 = as.numeric(input$peptideDpi)
+        x_size = as.numeric(input$peptideXLabels)
+        x_angle = as.numeric(input$peptideXAngle)
+        y_size = as.numeric(input$peptideYLabels)
+        x_title = as.numeric(input$peptideXTitle)
+        y_title = as.numeric(input$peptideYTitle)
+        
+        ggsave(file,
+               plot = makePeptideHeatHeatmap3(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck,
+                                              x_size, x_angle, y_size, x_title, y_title),
+               width = width1,
+               height = height1,
+               device = "tiff",
+               compression = "lzw")
+        
+      },
+      contentType = "image/tiff"
+    )
 
 
 
