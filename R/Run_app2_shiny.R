@@ -12,32 +12,112 @@
 runApp2 <- function(options = list()){
   theme_set(theme_cowplot())
   options(shiny.maxRequestSize = 5000*1024^2)
+  
+  
+  
+  
+
+# Modules -----------------------------------------------------------------
+
+  downloadablePlotUI <- function(id, label1) {
+    ns <- NS(id)
+    tabPanel(label1,
+             fluidRow(column(3, textInput(ns("DLWidth"), "Width", value = 8)),
+                      column(3, textInput(ns("DLHeight"), "Height", value = 6)),
+                      column(3, textInput(ns("DLDpi"), "dpi", value = 300)),
+                      column(3, textInput(ns("DLFileName"), "Filename", value = "Plot"))),
+             fluidRow(column(3, sliderInput(ns("DLXLabels"), "X-axis label size", min = 4, max = 16, value = 10, step = 1)),
+                      column(3, sliderInput(ns("DLXAngle"), "X-axis label angle", min = 0, max = 90, value = 45, step =5)),
+                      column(3, sliderInput(ns("DLYLabels"), "Y-axis label size", min = 4, max = 16, value = 10, step = 1))),
+             fluidRow(column(3, sliderInput(ns("DLXTitle"), "X-axis title size", min = 0, max = 25, value = 12, step = 1)),
+                      column(3, sliderInput(ns("DLYTitle"), "Y-axis title size", min = 0, max = 25, value = 12, step = 1))),
+             fluidRow(column(3, downloadButton(ns("DLButton")))),
+             plotOutput(ns("DLPlot"), height = "900px"))
+    
+  }
+  
+  
+  downloadablePlotServer <- function(id, plotfun) {
+    moduleServer(
+      id,
+      function(input, output, session) {
+        
+        
+        adjusted_plot <- reactive({
+          x_size = as.numeric(input$DLXLabels)
+          x_angle = as.numeric(input$DLXAngle)
+          y_size = as.numeric(input$DLYLabels)
+          x_title = as.numeric(input$DLXTitle)
+          y_title = as.numeric(input$DLYTitle)
+          
+          plotfun() +
+            theme(axis.text.x = element_text(size = x_size, angle = x_angle, hjust = 1),
+                  axis.text.y = element_text(size = y_size),
+                  axis.title.x = element_text(size = x_title),
+                  axis.title.y = element_text(size = y_title))
+        })
+        
+        output$DLPlot <- renderPlot({
+          plotfun()
+        })
+        
+        output$DLTest <- renderText({
+          paste(input$DLFileName, '.tiff', sep='')
+        })
+        
+        output$DLButton <- downloadHandler(
+          filename = function() {paste(input$DLFileName, '.tiff', sep='') },
+          content = function(file) {
+            width1 = as.numeric(input$DLWidth)
+            height1 = as.numeric(input$DLHeight)
+            dpi1 = as.numeric(input$DLDpi)
+            
+            ggsave(file,
+                   plot = adjusted_plot(),
+                   width = width1,
+                   height = height1,
+                   dpi = dpi1,
+                   device = "tiff",
+                   compression = "lzw")
+            
+          },
+          contentType = "image/tiff"
+        )
+        
+      }
+    )
+  }  
 
 
 
   # Limma tab --------------------------------------------------------------
 
-  Box0 <- {
-    fluidRow(
-      box(
-        width = 12,
-        fileInput("allUpload", "Upload multiple files", multiple = TRUE)
-      )
-    )
-  }
+  #Deprecated
+  # Box0 <- {
+  #   fluidRow(
+  #     box(
+  #       width = 12,
+  #       fileInput("allUpload", "Upload multiple files", multiple = TRUE)
+  #     )
+  #   )
+  # }
+  # 
+  # Box1 <- {
+  #   fluidRow(
+  #     box(
+  #       width = 12,
+  #       fileInput("quantData", "Import quantitative data"),
+  #       fileInput("metadata", "Import metadata"),
+  #       fileInput("peptideQuantData", "Import peptide quantitative data"),
+  #       fileInput("peptideMetaData", "Import peptide metadata")
+  #     )
+  #   )
+  # }
   
-  Box1 <- {
-    fluidRow(
-      box(
-        width = 12,
-        fileInput("quantData", "Import quantitative data"),
-        fileInput("metadata", "Import metadata"),
-        fileInput("peptideQuantData", "Import peptide quantitative data"),
-        fileInput("peptideMetaData", "Import peptide metadata")
-      )
-    )
-  }
-  
+
+# Module testing ----------------------------------------------------------
+
+
   Box0_1 <- {
     fluidRow(
       tabBox(id = "fileInputTab", width = 12,
@@ -57,11 +137,22 @@ runApp2 <- function(options = list()){
 
   Box2 <- {
     fluidRow(
-      box(
+      tabBox(
+        id = "Samplegrouping",
         width = 5,
         title = "Sample grouping",
-        fileInput("sampleFile", "Import sample file"),
-        rHandsontableOutput("sampleNameTable")
+        tabPanel(
+          "Table",
+          fileInput("sampleFile", "Import sample file"),
+          rHandsontableOutput("sampleNameTable")
+        ),
+        tabPanel(
+          "Buttons",
+          selectizeInput("sampleGroupA", "Group A", multiple = TRUE, choices = character(0)),
+          selectizeInput("sampleGroupB", "Group B", multiple = TRUE, choices = character(0)),
+          actionButton("sampleActionButton", "All other samples")
+        )
+
       ),
       box(
         width = 5,
@@ -157,7 +248,7 @@ runApp2 <- function(options = list()){
 
   Limma_tab <- {
     tabItem("Limma",
-            # Box0,
+            #Box0,
             # Box1,
             Box0_1,
             Box2,
@@ -228,18 +319,8 @@ runApp2 <- function(options = list()){
                           plotlyOutput("peptideHeat", height = "900px"),
                           tableOutput("peptide1"),
                           tableOutput("peptide2")),
-                 tabPanel("Peptide ggplot heatmap",
-                          fluidRow(column(3, textInput("peptideWidth", "Width", value = 8)),
-                                   column(3, textInput("peptideHeight", "Height", value = 6)),
-                                   column(3, textInput("peptideDpi", "dpi", value = 300)),
-                                   column(3, textInput("peptideFileName", "Filename", value = "Plot"))),
-                          fluidRow(column(3, sliderInput("peptideXLabels", "X-axis label size", min = 4, max = 16, value = 10, step = 1)),
-                                   column(3, sliderInput("peptideXAngle", "X-axis label angle", min = 0, max = 90, value = 45, step =5)),
-                                   column(3, sliderInput("peptideYLabels", "Y-axis label size", min = 4, max = 16, value = 10, step = 1))),
-                          fluidRow(column(3, sliderInput("peptideXTitle", "X-axis title size", min = 0, max = 25, value = 12, step = 1)),
-                                   column(3, sliderInput("peptideYTitle", "Y-axis title size", min = 0, max = 25, value = 12, step = 1))),
-                          fluidRow(column(3, downloadButton("peptideButton", "Download plot"))),
-                          plotOutput("peptideHeat2", height = "900px"))
+                 downloadablePlotUI("peptideDLPlot", "Peptide ggplot heatmap")
+                 
           )
         )
       )
@@ -374,6 +455,15 @@ runApp2 <- function(options = list()){
       read_tsv(df$datapath)
       
     })
+    
+    observe({
+      if(isTruthy(metadata())){
+        x1 <- metadata() %>%
+          select(Protein_Name)
+        updateSelectInput(session, "ProteinSearch",
+                          choices = x1)
+      }
+    })
 
 
     # Sample table ------------------------------------------------------------
@@ -458,15 +548,91 @@ runApp2 <- function(options = list()){
       if(is.null(input$sampleNameTable)) return (NULL)
       df <- hot_to_r(input$sampleNameTable)
     })
+    
+    
+    observe({
+      if(isTruthy(sampleNameTable2())){
+        x1 <- sampleNameTable2() %>%
+          select(Sample_name)
+        updateSelectInput(session, "sampleGroupA",
+                          choices = x1$Sample_name)
+        updateSelectInput(session, "sampleGroupB",
+                          choices = x1$Sample_name)
+      }
+    })
+    
+    observe({
+      req(input$sampleGroupA)
+      req(sampleNameTable2())
+      
+      x1 <- sampleNameTable2() %>%
+        select(Sample_name)
+      x2 <- input$sampleGroupA
+      x3 <- x1 %>%
+        filter(!Sample_name %in% x2)
+      
+      updateSelectInput(session, "sampleGroupB",
+                        choices = x3$Sample_name)
+    })
+    
+    observeEvent(input$sampleActionButton, {
+      req(sampleNameTable2())
+      x1 <- sampleNameTable2() %>%
+        select(Sample_name)
+      x2 <- input$sampleGroupA
+      x3 <- x1 %>%
+        filter(!Sample_name %in% x2)
+      
+      updateSelectizeInput(session, "sampleGroupB",
+                        choices = x3,
+                        selected = x3$Sample_name)
+      
+    })
 
 
 
 
     # Design table ------------------------------------------------------------
+    # design_table <- reactive({
+    #   req(sampleNameTable2())
+    #   makeDesignTable(sampleNameTable2())
+    # })
+    
+    # design_table <- reactive({
+    #   req(sampleNameTable2())
+    #   if(isTruthy(input$sampleGroupA)){
+    #     a <- sampleNameTable2() %>%
+    #       mutate(Group = ifelse(Sample_name %in% input$sampleGroupA, "A", "B"))
+    #     return(makeDesignTable(a))
+    #   } else {
+    #     makeDesignTable(sampleNameTable2())
+    #   }
+    #   
+    # }) %>% throttle(500)
+    
     design_table <- reactive({
       req(sampleNameTable2())
-      makeDesignTable(sampleNameTable2())
-    })
+      a <- sampleNameTable2()
+      
+      if(isTruthy(input$sampleGroupA)){
+        a <- a %>%
+          mutate(Group = ifelse(Sample_name %in% input$sampleGroupA, "A", Group))
+      }
+      
+      if(isTruthy(input$sampleGroupB)){
+        a <- a %>%
+          mutate(Group = ifelse(Sample_name %in% input$sampleGroupB, "B", Group))
+      }
+      
+      if(all(isTruthy(input$sampleGroupB) & isTruthy(input$sampleGroupB))){
+        a1 <- c(input$sampleGroupA, input$sampleGroupB)
+        a <- a %>%
+          mutate(Group = ifelse(!Sample_name %in% a1, "C", Group))
+      }
+      
+      return(makeDesignTable(a))
+      
+    }) %>% debounce(200)
 
     sample_order <- reactive({
       req(sampleNameTable2())
@@ -727,6 +893,7 @@ runApp2 <- function(options = list()){
       updateSelectInput(session, "P9select",
                         choices = x2)
     })
+    
 
     output$P9 <- renderTable({
       req(input$P9select)
@@ -844,9 +1011,9 @@ runApp2 <- function(options = list()){
 
       if(isTruthy(input$ProteinSearch)){
         p_search <- protein_df %>%
-          filter(Protein_name2 %in% input$ProteinSearch,
+          filter(Protein_Name %in% input$ProteinSearch,
           ) %>%
-          left_join(protein_limma, by = "id") %>%
+          left_join(combined_data(), by = "id") %>%
           filter(Comparison %in% volcanoComparison)
 
         if(nrow(p_search) > 0){
@@ -927,7 +1094,7 @@ runApp2 <- function(options = list()){
       makePeptideHeatHeatmap(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
     })
     
-    output$peptideHeat2 <- renderPlot({
+    downloadablePlotServer("peptideDLPlot", reactive({
       req(input$phcheck)
       req(peptide_click_table())
       req(peptide_metadata())
@@ -935,70 +1102,17 @@ runApp2 <- function(options = list()){
       req(group_order())
       
       makePeptideHeatHeatmap2(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
-    })
+    }))
     
     
     
-    peptide2Plot <- reactive({
-      req(input$phcheck)
-      req(peptide_click_table())
-      req(peptide_metadata())
-      req(sample_order())
-      req(group_order())
-      
-      makePeptideHeatHeatmap2(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
-    })
-    
-
-    
-    # output$peptideButton <- downloadHandler(
-    #   filename = function() {paste(input$peptideFileName, '.tiff', sep='') },
-    #   content = function(file) {
-    #     width1 = as.numeric(input$peptideWidth)
-    #     height1 = as.numeric(input$peptideHeight)
-    #     dpi1 = as.numeric(input$peptideDpi)
-    #     
-    #     ggsave(file,
-    #            plot = makePeptideHeatHeatmap2(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck),
-    #            width = width1,
-    #            height = height1,
-    #            device = "tiff",
-    #            compression = "lzw")
-    #   },
-    #   contentType = "image/tiff"
-    # )
-    
-    output$peptideButton <- downloadHandler(
-      filename = function() {paste(input$peptideFileName, '.tiff', sep='') },
-      content = function(file) {
-        width1 = as.numeric(input$peptideWidth)
-        height1 = as.numeric(input$peptideHeight)
-        dpi1 = as.numeric(input$peptideDpi)
-        x_size = as.numeric(input$peptideXLabels)
-        x_angle = as.numeric(input$peptideXAngle)
-        y_size = as.numeric(input$peptideYLabels)
-        x_title = as.numeric(input$peptideXTitle)
-        y_title = as.numeric(input$peptideYTitle)
-        
-        ggsave(file,
-               plot = makePeptideHeatHeatmap3(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck,
-                                              x_size, x_angle, y_size, x_title, y_title),
-               width = width1,
-               height = height1,
-               device = "tiff",
-               compression = "lzw")
-        
-      },
-      contentType = "image/tiff"
-    )
-
 
 
     # -------------------------------------------------------------------------
 
 # Debugging/scraps/tests --------------------------------------------------
 
-    ####
+
 
 
   }

@@ -355,3 +355,10 @@ makePeptideHeatHeatmap3 <- function(clickData, metaData, sampleOrder, groupOrder
             axis.title.y = element_text(size = ytitlesize))
   }
 }
+
+
+
+
+# Debugging/tests ---------------------------------------------------------
+
+
