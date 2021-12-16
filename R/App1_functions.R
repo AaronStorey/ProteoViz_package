@@ -6,25 +6,19 @@
 readSamplesReport <- function(filePath, type){
 
   if (type == "DIA"){
-    #Read peptide quant report
-    a <- read.csv(filePath, nrows = 1)
+    #The file will contain a variable number of uncommented metadata.  This reads the first 100 lines,
+    #Finds the column row and sets skip value to that - 1.
+
     first_read <- readLines(filePath)
     file_length <- length(first_read)
-    quant_columns <- names(a)[a == "Quant. Intensity"]
-    cols1 <- c(1:6,grep("Intensity", a))
-    cols2 <- c(as.character(a[1:6]), quant_columns)
+    skip_number <- grep("Visible", first_read) - 1
     
-    # a1 <- read_csv(filePath, skip = 2, col_names = FALSE, n_max = file_length - 3) %>%
-    #   select(cols1) %>%
-    #   set_names(cols2) %>%
-    #   {set_names(., gsub(" ", "_", names(.)))} %>%
-    #   mutate(id = as.double(rownames(.)))
-    # 
-    # a1
-    a3 <- read.csv(filePath, skip = 2, header = FALSE)
-    a4 <- a3[,cols1]
-    names(a4) <- cols2
-    as_tibble(a4)
+    read_csv(filePath, skip = skip_number, na = c("", "Missing Value"), n_max = file_length - skip_number - 2) %>%
+      {purrr::set_names(., gsub(" ", "_", names(.)))} %>%
+      filter(!is.na(Visible)) %>% #Removes END OF FILE line
+      rename(id = `#`) %>%
+      filter(!grepl("\\.", id)) %>% #Removes protein clusters, keeps protein group
+      filter(!grepl("DECOY", Protein_Name))
   } else if (type == "TMT"){
       read_tsv(filePath, guess_max = 10000) %>%
         {purrr::set_names(., gsub(" ", "_", names(.)))}
