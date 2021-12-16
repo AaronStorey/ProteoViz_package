@@ -141,6 +141,7 @@ makeSummary3 <- function(quantData, combinedData, metaData, prefix){
     write_tsv(paste0(prefix, "_Summarized_output.tsv"))
 }
 
+#For plotly
 makeProteinHeatHeatmap <- function(selectData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
 
   protein_df <- metaData
@@ -193,6 +194,64 @@ makeProteinHeatHeatmap <- function(selectData, metaData, sampleOrder, groupOrder
   
 }
 
+#For ggplot
+makeProteinHeatHeatmap2 <- function(selectData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
+  
+  protein_df <- metaData
+  
+  p <- selectData %>%
+    left_join(select(protein_df, id, Description, Gene_name), by = "id") %>%
+    mutate(Description = str_sub(Description, 1, 75)) %>%
+    unite(Protein_name, Description, Gene_name, id, sep = " ") %>%
+    gather(Sample, Intensity, -Protein_name)
+  
+  #Exclude samples belonging to indicated groups
+  sample_order1 <- sampleOrder
+  group_order1 <- groupOrder
+  
+  if(isTruthy(groupexclude)){
+    sample_order1 <- sample_order1[!group_order1 %in% groupexclude]
+    group_order1 <- group_order1[!group_order1 %in% groupexclude]
+  }
+  
+  #Rearrange based on sample table order
+  p1 <- p %>%
+    filter(Sample %in% sample_order1) %>%
+    mutate(Sample = factor(Sample, levels = sample_order1))
+  
+  # #Scale based on phscalecheck checkbox
+  # scale_rows <- ifelse(scaleRows, "row", "none")
+  
+  #Column color annotations
+  
+  if(scaleRows) {
+    p1 %>%
+      filter(Intensity >0) %>%
+      group_by(Protein_name) %>%
+      mutate(Intensity = (Intensity - mean(Intensity, na.rm = TRUE))) %>%
+      ggplot(aes(x = Sample, y = Protein_name, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
+      scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                           na.value = "white",
+                           midpoint = 0, name = "log2 Relative Intensity") +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  } else {
+    p1 %>%
+      filter(Intensity >0) %>%
+      # group_by(Protein_name) %>%
+      # mutate(Intensity = (Intensity - mean(Intensity, na.rm = TRUE))) %>%
+      ggplot(aes(x = Sample, y = Protein_name, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
+      scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                           na.value = "white",
+                           midpoint = 0, name = "log2 Relative Intensity") +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1)
+    
+    )
+  }
+  
+  
+}
+
+#For plotly
 makePeptideHeatHeatmap <- function(clickData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
   
   peptide_df <- metaData
@@ -245,6 +304,7 @@ makePeptideHeatHeatmap <- function(clickData, metaData, sampleOrder, groupOrder,
   
 }
 
+#For ggplot
 makePeptideHeatHeatmap2 <- function(clickData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
   
   peptide_df <- metaData
@@ -275,14 +335,23 @@ makePeptideHeatHeatmap2 <- function(clickData, metaData, sampleOrder, groupOrder
   #Column color annotations
   
   if(scaleRows) {
+    # p1 %>%
+    #   filter(Intensity >0) %>%
+    #   group_by(Sequence) %>%
+    #   mutate(Intensity = (Intensity - mean(Intensity, na.rm = TRUE))) %>%
+    #   ggplot(aes(x = Sample, y = Sequence, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
+    #   scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+    #                        na.value = "white",
+    #                        midpoint = 0, name = "log2 Relative Intensity") +
+    #   theme(axis.text.x = element_text(angle = 30, hjust = 1))
+    
     p1 %>%
       filter(Intensity >0) %>%
+      mutate(Intensity = 2^Intensity) %>%
       group_by(Sequence) %>%
-      mutate(Intensity = (Intensity - mean(Intensity, na.rm = TRUE))) %>%
-      ggplot(aes(x = Sample, y = Sequence, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
-      scale_fill_gradient2(low = "blue", mid = "white", high = "red",
-                           na.value = "white",
-                           midpoint = 0, name = "log2 Relative Intensity") +
+      mutate(Intensity = (Intensity / max(Intensity, na.rm = TRUE)) * 100 ) %>%
+      ggplot(aes(x = Sample, y = Sequence, fill = Intensity)) + geom_bin2d() +
+      scale_fill_viridis_c(name = "Intensity\n(%max)") +
       theme(axis.text.x = element_text(angle = 30, hjust = 1))
     
   } else {

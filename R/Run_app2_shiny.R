@@ -313,6 +313,7 @@ runApp2 <- function(options = list()){
           tabBox(title = "Selected proteins", id = "tab1", width = 12,
                  tabPanel("Select proteins",
                           plotlyOutput("proteinHeat", height = "900px")),
+                 downloadablePlotUI("proteinDLPlot", "Protein downloadable heatmap"),
                  tabPanel("Summarized",
                           plotlyOutput("ProteinHeatAverage", height = "900px")),
                  tabPanel("Peptide plotly heatmap",
@@ -1103,6 +1104,20 @@ runApp2 <- function(options = list()){
       
       makePeptideHeatHeatmap2(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
     }))
+    
+    
+    downloadablePlotServer("proteinDLPlot", reactive({
+      req(input$phcheck)
+      req(quant_data())
+      req(metadata())
+      req(sample_order())
+      req(group_order())
+      req(selected_data())
+      
+      makeProteinHeatHeatmap2(selected_data(), metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+    }))
+    
+    
     
     
     
