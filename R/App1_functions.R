@@ -4,11 +4,11 @@
 # Import ------------------------------------------------------------------
 #General
 readSamplesReport <- function(filePath, type){
-
+  
   if (type == "DIA"){
     #The file will contain a variable number of uncommented metadata.  This reads the first 100 lines,
     #Finds the column row and sets skip value to that - 1.
-
+    
     first_read <- readLines(filePath)
     file_length <- length(first_read)
     skip_number <- grep("Visible", first_read) - 1
@@ -20,10 +20,13 @@ readSamplesReport <- function(filePath, type){
       filter(!grepl("\\.", id)) %>% #Removes protein clusters, keeps protein group
       filter(!grepl("DECOY", Protein_Name))
   } else if (type == "TMT"){
-      read_tsv(filePath, guess_max = 10000) %>%
-        {purrr::set_names(., gsub(" ", "_", names(.)))}
+    read_tsv(filePath, guess_max = 10000) %>%
+      {purrr::set_names(., gsub(" ", "_", names(.)))}
+  } else if (type == "MaxQuant"){
+    read_tsv(filePath, guess_max = 10000) %>%
+      {purrr::set_names(., gsub(" ", "_", names(.)))}
   }
-
+  
 }
 
 readPeptideReport <- function(filePath, type){
@@ -47,6 +50,12 @@ readPeptideReport <- function(filePath, type){
   # as_tibble(a4)
   
   
+}
+
+readPeptideTxt <- function(filePath, type){
+  read_tsv(filePath, guess_max = 10000) %>%
+    {purrr::set_names(., gsub(" ", "_", names(.)))} %>%
+    {purrr::set_names(., gsub("Intensity\\_", "iBAQ_", names(.)))}
 }
 
 make_observation_required_table <- function(group_table, x1){
@@ -323,9 +332,22 @@ makeProteinMeta <- function(x, type){
 
     x %>%
       select(one_of(column_test)) %>%
+      
       mutate(Description = stringr::str_extract(Fasta_headers, "(?<= )[^\\|]+(?= OS\\=)"),
                     Gene_name = stringr::str_extract(Fasta_headers, "(?<=GN\\=)[^\\|]+(?= PE\\=)"),
                     Uniprot_ID = stringr::str_extract(Fasta_headers, "(?<=\\|)[^\\|]+(?=\\|)"))
+  }
+  else if (type == "MaxQuant") {
+    
+    column_test <- c("Majority_protein_IDs", "Fasta_headers", "Score", "id")
+    column_test <- column_test[column_test %in% names(x)]
+    
+    x %>%
+      select(one_of(column_test)) %>%
+      mutate(Protein_Name = stringr::str_extract(Fasta_headers, "^[^\\;]*")) %>%
+      mutate(Description = stringr::str_extract(Fasta_headers, "(?<= )[^\\|]+(?= OS\\=)"),
+             Gene_name = stringr::str_extract(Fasta_headers, "(?<=GN\\=)[^\\|]+(?= PE\\=)"),
+             Uniprot_ID = stringr::str_extract(Fasta_headers, "(?<=\\|)[^\\|]+(?=\\|)"))
   }
 
 }
@@ -335,6 +357,12 @@ makePeptideMeta <- function(x, type){
   if (type == "DIA"){
     x %>%
       select(id, Sequence, Modifications, Charge, Protein_Accessions, Precursor_MZ, Global_Posterior_Error_Probability)
+  }
+  
+  else if (type == "MaxQuant") {
+    x %>%
+      select(id, Sequence, Protein_group_IDs, Proteins, Gene_names, Protein_names, Charge = Charges, Score)
+    
   }
 }
 
@@ -396,7 +424,7 @@ save_quantitative_data <- function(dfx, projectName, sample_table, dataType = "p
       spread(Sample_name, Intensity) %>%
       mutate(id = as.integer(id)) %>%
       arrange(id) %>%
-      write_tsv(paste0(projectName, "/", file_prefix, "_", dataType, "_", "peptide_quantitative_data.tsv"))
+      write_tsv(paste0(projectName, "/", file_prefix, "_", dataType, "_", "quantitative_data.tsv"))
   }
 }
 
@@ -441,6 +469,8 @@ makeSampleNameTable <- function(protein_df, type){
     x1 <- grep("\\.", names(protein_df))
   } else if (type == "TMT"){
     x1 <- grep("Reporter\\_intensity\\_corrected\\_.{3,}", names(protein_df))
+  } else if (type == "MaxQuant"){
+    x1 <- grep("iBAQ\\_", names(protein_df))
   }
 
   tibble::tibble(Data_name = names(protein_df)[x1],

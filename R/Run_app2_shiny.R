@@ -30,7 +30,9 @@ runApp2 <- function(options = list()){
                       column(3, sliderInput(ns("DLXAngle"), "X-axis label angle", min = 0, max = 90, value = 45, step =5)),
                       column(3, sliderInput(ns("DLYLabels"), "Y-axis label size", min = 4, max = 16, value = 10, step = 1))),
              fluidRow(column(3, sliderInput(ns("DLXTitle"), "X-axis title size", min = 0, max = 25, value = 12, step = 1)),
-                      column(3, sliderInput(ns("DLYTitle"), "Y-axis title size", min = 0, max = 25, value = 12, step = 1))),
+                      column(3, sliderInput(ns("DLYTitle"), "Y-axis title size", min = 0, max = 25, value = 12, step = 1)),
+                      column(3, sliderInput(ns("DLLegendTitle"), "Legend title size", min = 0, max = 25, value = 12, step = 1)),
+                      column(3, sliderInput(ns("DLLegendText"), "Legend text size", min = 0, max = 25, value = 12, step = 1))),
              fluidRow(column(3, downloadButton(ns("DLButton")))),
              plotOutput(ns("DLPlot"), height = "900px"))
     
@@ -49,12 +51,16 @@ runApp2 <- function(options = list()){
           y_size = as.numeric(input$DLYLabels)
           x_title = as.numeric(input$DLXTitle)
           y_title = as.numeric(input$DLYTitle)
+          legend_title_size = as.numeric(input$DLLegendTitle)
+          legend_text_size = as.numeric(input$DLLegendText)
           
           plotfun() +
             theme(axis.text.x = element_text(size = x_size, angle = x_angle, hjust = 1),
                   axis.text.y = element_text(size = y_size),
                   axis.title.x = element_text(size = x_title),
-                  axis.title.y = element_text(size = y_title))
+                  axis.title.y = element_text(size = y_title),
+                  legend.title = element_text(size = legend_title_size),
+                  legend.text = element_text(size = legend_text_size))
         })
         
         output$DLPlot <- renderPlot({
@@ -1047,8 +1053,19 @@ runApp2 <- function(options = list()){
       protein_id <- metadata() %>%
         filter(id %in% d$key)
       
-      peptide_metadata() %>%
-        filter(Protein_Accessions %in% protein_id$Accession_Number)
+      #If DIA peptide metadata
+      if(grepl("Protein\\_Accessions", names(peptide_metadata()))){
+        peptide_metadata() %>%
+          filter(Protein_Accessions %in% protein_id$Accession_Number)
+      } else {
+        #Else, assumes MaxQuant peptide metadata
+        peptide_metadata() %>%
+          filter(Protein_group_IDs %in% protein_id$id)
+      }
+      
+      
+      
+
       
     })
     
