@@ -141,7 +141,7 @@ makeSummary3 <- function(quantData, combinedData, metaData, prefix){
     write_tsv(paste0(prefix, "_Summarized_output.tsv"))
 }
 
-#For plotly
+#For protein plotly
 makeProteinHeatHeatmap <- function(selectData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
 
   protein_df <- metaData
@@ -194,7 +194,7 @@ makeProteinHeatHeatmap <- function(selectData, metaData, sampleOrder, groupOrder
   
 }
 
-#For ggplot
+#For protein ggplot
 makeProteinHeatHeatmap2 <- function(selectData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
   
   protein_df <- metaData
@@ -251,7 +251,7 @@ makeProteinHeatHeatmap2 <- function(selectData, metaData, sampleOrder, groupOrde
   
 }
 
-#For plotly
+#For peptide plotly
 makePeptideHeatHeatmap <- function(clickData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
   
   peptide_df <- metaData
@@ -304,7 +304,7 @@ makePeptideHeatHeatmap <- function(clickData, metaData, sampleOrder, groupOrder,
   
 }
 
-#For ggplot
+#For peptide ggplot
 makePeptideHeatHeatmap2 <- function(clickData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
   
   peptide_df <- metaData
@@ -335,16 +335,6 @@ makePeptideHeatHeatmap2 <- function(clickData, metaData, sampleOrder, groupOrder
   #Column color annotations
   
   if(scaleRows) {
-    # p1 %>%
-    #   filter(Intensity >0) %>%
-    #   group_by(Sequence) %>%
-    #   mutate(Intensity = (Intensity - mean(Intensity, na.rm = TRUE))) %>%
-    #   ggplot(aes(x = Sample, y = Sequence, fill = Intensity)) + geom_bin2d(na.rm = TRUE) +
-    #   scale_fill_gradient2(low = "blue", mid = "white", high = "red",
-    #                        na.value = "white",
-    #                        midpoint = 0, name = "log2 Relative Intensity") +
-    #   theme(axis.text.x = element_text(angle = 30, hjust = 1))
-    
     p1 %>%
       filter(Intensity >0) %>%
       mutate(Intensity = 2^Intensity) %>%
@@ -385,11 +375,13 @@ makePeptideHeatHeatmap3 <- function(clickData, metaData, sampleOrder, groupOrder
   #Exclude samples belonging to indicated groups
   sample_order1 <- sampleOrder
   group_order1 <- groupOrder
+
   
   if(isTruthy(groupexclude)){
     sample_order1 <- sample_order1[!group_order1 %in% groupexclude]
     group_order1 <- group_order1[!group_order1 %in% groupexclude]
   }
+
   
   #Rearrange based on sample table order
   p1 <- p %>%
@@ -425,9 +417,52 @@ makePeptideHeatHeatmap3 <- function(clickData, metaData, sampleOrder, groupOrder
   }
 }
 
+makeProteinPointPlot <- function(clickData, metaData, sampleOrder, groupOrder, groupexclude = NULL, scaleRows) {
+  
 
+  
+  protein_df <- metaData
+  
+  p <- clickData %>%
+    gather(Sample, Intensity, -id) %>%
+    left_join(select(protein_df, id, Description, Gene_name), by = "id") %>%
+    mutate(Description = str_sub(Description, 1, 75)) %>%
+    unite(Protein_name, Description, Gene_name, id, sep = " ")
+  
+  p_title <- p$Protein_name[[1]]
+  
+  #Exclude samples belonging to indicated groups
+  sample_order1 <- sampleOrder
+  group_order1 <- groupOrder
+  
+  if(isTruthy(groupexclude)){
+    sample_order1 <- sample_order1[!group_order1 %in% groupexclude]
+    group_order1 <- group_order1[!group_order1 %in% groupexclude]
+  }
+  
+  
+  #Join to p
+  p_group <- tibble(Sample = sample_order1,
+                    Group = group_order1)
+  
+  #Rearrange based on sample table order
+  p1 <- p %>%
+    filter(Sample %in% sample_order1,
+           !is.na(Intensity)) %>%
+    left_join(p_group) %>%
+    mutate(Sample = factor(Sample, levels = sample_order1))
+  
+  p1 %>%
+    ggplot(aes(x = Sample, y = Intensity, color = Group)) + geom_point() +
+    ggsci::scale_color_npg() +
+    labs(title = p_title,
+         y = "Log2 Intensity") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+}
 
 
 # Debugging/tests ---------------------------------------------------------
+
 
 

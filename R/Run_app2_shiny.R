@@ -8,6 +8,7 @@
 #' @import plotly
 #' @import heatmaply
 #' @import UpSetR
+#' @import ggsci
 #' @export
 runApp2 <- function(options = list()){
   theme_set(theme_cowplot())
@@ -320,6 +321,7 @@ runApp2 <- function(options = list()){
                  tabPanel("Select proteins",
                           plotlyOutput("proteinHeat", height = "900px")),
                  downloadablePlotUI("proteinDLPlot", "Protein downloadable heatmap"),
+                 downloadablePlotUI("proteinDLPoint", "Protein downloadable PointPlot"),
                  tabPanel("Summarized",
                           plotlyOutput("ProteinHeatAverage", height = "900px")),
                  tabPanel("Peptide plotly heatmap",
@@ -330,6 +332,9 @@ runApp2 <- function(options = list()){
                  
           )
         )
+        # fluidRow(
+        #   tableOutput("Test1")
+        # )
       )
     )
   }
@@ -1043,6 +1048,15 @@ runApp2 <- function(options = list()){
         filter(id %in% d$key)
     })
     
+    protein_click_data <- reactive({
+      req(quant_data())
+      d <- event_data("plotly_click", source = "proteinVolcano")
+      req(!is.null(d))
+      
+      quant_data() %>%
+        filter(id %in% d$key)
+    })
+    
     peptide_click_data <- reactive({
       req(quant_data())
       req(metadata())
@@ -1054,7 +1068,7 @@ runApp2 <- function(options = list()){
         filter(id %in% d$key)
       
       #If DIA peptide metadata
-      if(grepl("Protein\\_Accessions", names(peptide_metadata()))){
+      if("Protein_Accessions" %in% names(peptide_metadata())){
         peptide_metadata() %>%
           filter(Protein_Accessions %in% protein_id$Accession_Number)
       } else {
@@ -1062,12 +1076,10 @@ runApp2 <- function(options = list()){
         peptide_metadata() %>%
           filter(Protein_group_IDs %in% protein_id$id)
       }
-      
-      
-      
-
-      
     })
+    
+    
+    
     
     peptide_click_table <- reactive({
       req(peptide_click_data())
@@ -1133,6 +1145,29 @@ runApp2 <- function(options = list()){
       
       makeProteinHeatHeatmap2(selected_data(), metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
     }))
+    
+    
+    downloadablePlotServer("proteinDLPoint", reactive({
+      req(input$phcheck)
+      req(protein_click_data())
+      req(metadata())
+      req(sample_order())
+      req(group_order())
+      
+      makeProteinPointPlot(protein_click_data(), metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+    }))
+    
+    # output$Test1 <- renderTable({
+    #   req(input$phcheck)
+    #   req(protein_click_data())
+    #   req(metadata())
+    #   req(sample_order())
+    #   req(group_order())
+    #   
+    #   f_Test1(protein_click_data(), metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+    # })
+    
+    
     
     
     
