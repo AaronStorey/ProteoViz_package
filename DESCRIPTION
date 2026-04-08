@@ -20,5 +20,6 @@ Depends:
     shiny,
     cowplot,
     UpSetR,
-    plotly
+    plotly,
+    ggsci
 RoxygenNote: 7.1.0

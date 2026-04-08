@@ -1071,7 +1071,15 @@ runApp2 <- function(options = list()){
       if("Protein_Accessions" %in% names(peptide_metadata())){
         peptide_metadata() %>%
           filter(Protein_Accessions %in% protein_id$Accession_Number)
-      } else {
+      } else if("PG.ProteinAccessions" %in% names(peptide_metadata())){
+        #For Spectronaut data
+        # peptide_metadata() %>%
+        #   filter(PG.ProteinAccessions %in% protein_id$PG.ProteinAccessions)
+        
+        peptide_metadata() %>%
+          filter(PG.ProteinAccessions %in% protein_id$PG.ProteinGroups)
+        
+      }else {
         #Else, assumes MaxQuant peptide metadata
         peptide_metadata() %>%
           filter(Protein_group_IDs %in% protein_id$id)

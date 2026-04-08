@@ -257,7 +257,7 @@ makePeptideHeatHeatmap <- function(clickData, metaData, sampleOrder, groupOrder,
   peptide_df <- metaData
   
   p <- clickData %>%
-    left_join(select(peptide_df, id, Sequence, Charge), by = "id") %>%
+    left_join(select(peptide_df, id, Sequence, Charge), by = "id", suffix = c("", ".y")) %>%
     mutate(Description = str_c(Sequence, Charge, sep = "_")) %>%
     select(Description, one_of(names(clickData))) %>%
     as.data.frame() %>%
@@ -272,13 +272,21 @@ makePeptideHeatHeatmap <- function(clickData, metaData, sampleOrder, groupOrder,
     group_order1 <- group_order1[!group_order1 %in% groupexclude]
   }
   
+  
+  p1 <- p
+  p1 <- p1[rowSums(!is.na(p1)) > 0, ]
+  # Remove all-NA columns
+  p1 <- p1[, colSums(!is.na(p1)) > 0]
+  p1[is.na(p1)] <- 0
+  
+  
+  group_order1 <- group_order1[sample_order1 %in% colnames(p1)]
+  sample_order1 <- sample_order1[sample_order1 %in% colnames(p1)]
+  
+  
   #Rearrange based on sample table order
-  p1 <- p[,sample_order1]
+  p1 <- p1[,sample_order1]
   
-  # #Scale based on phscalecheck checkbox
-  # scale_rows <- ifelse(scaleRows, "row", "none")
-  
-  #Column color annotations
   
   if(scaleRows) {
     p1 %>%

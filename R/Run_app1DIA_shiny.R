@@ -36,7 +36,10 @@ runApp1DIA <- function(options = list()){
         fileInput("sampleFile", "Import sample file"),
         rHandsontableOutput("sampleNameTable"),
         br(),
-        actionButton("saveSampleNameTable", "Save Table")
+        actionButton("saveSampleNameTable", "Save Table"),
+        tableOutput("Output1"),
+        textOutput("Output2"),
+        tableOutput("Output3")
       )
     )
   }
@@ -215,7 +218,6 @@ runApp1DIA <- function(options = list()){
     # Creates handsontable where metaData1() will be edited
 
     sampleNameTable <- reactive({
-
       if (isTruthy(input$sampleFile)) {
         readSampleNameTable(input$sampleFile$datapath) %>%
           rhandsontable() %>%
@@ -227,16 +229,35 @@ runApp1DIA <- function(options = list()){
           hot_col("Data_name", readOnly = T)
       }
     })
+    
+    sampleNameTable <- reactive({
+      if (isTruthy(input$sampleFile)) {
+        readSampleNameTable(input$sampleFile$datapath) %>%
+          rhandsontable() %>%
+          hot_col("Data_name", readOnly = T)
+      } else if(isTruthy(protein_df())){
+        x1 <- makeSampleNameTable(protein_df(), type = type) %>%
+          as.data.frame() %>%
+          rhandsontable() %>%
+          hot_col("Data_name", readOnly = T)
+        return(x1)
+      }
+      
+      
+    })
 
     # Outputs the Rhandsontable
     output$sampleNameTable <- renderRHandsontable({
       req(sampleNameTable())
-      sampleNameTable()
+      if(isTruthy(sampleNameTable())){
+        sampleNameTable()
+      }
     })
 
     # Changes the handsontable back into a dataframe
     sampleNameTable2 <- reactive({
       if(is.null(input$sampleNameTable)) return (NULL)
+      req(input$sampleNameTable)
       df <- hot_to_r(input$sampleNameTable)
       df
     })
@@ -337,21 +358,32 @@ runApp1DIA <- function(options = list()){
       if(isTruthy(input$proteinFile)){
         x1 <- input$proteinFile
         req(input$proteinFile)
-        readSamplesReport(x1$datapath, type)
+        if(grepl("quant\\_report", x1$name)){
+          readQuantReport(x1$datapath, type)
+        } else readSamplesReport(x1$datapath, type)
+
       } else if(isTruthy(input$peptideFile)){
 
         x1 <- input$peptideFile
         req(input$peptideFile)
         readPeptideReport(x1$datapath, type)
       }
-
       
+    })
+    
+    quant_data <- reactive({
+      if(isTruthy(input$allUpload)){
+        a <- as_tibble(input$allUpload) %>%
+          filter(grepl("protein\\_quantitative\\_data", name))
+        if(nrow(a) == 1){
+          return(read_tsv(a$datapath))
+        }
+        
+      } 
       
-      # if(isTruthy(x1)){
-      #   #Import, replace spaces with underscores
-      #   x2 <- readSamplesReport(x1$datapath, type)
-      #   x2
-      # }
+      req(input$quantData)
+      df <- input$quantData$datapath
+      read_tsv(df)
       
     })
 
@@ -503,6 +535,15 @@ runApp1DIA <- function(options = list()){
 
 
 
+    output$Output1 <- renderTable(head(protein_df()))
+    output$Output2 <- renderText({
+      req(input$proteinFile)
+      input$proteinFile$datapath
+    })
+    output$Output3 <- renderTable({
+      req(input$proteinFile)
+      input$proteinFile
+    })
   }
 
   shinyApp(ui, server, options = options)

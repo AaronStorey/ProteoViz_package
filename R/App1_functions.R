@@ -3,31 +3,41 @@
 
 # Import ------------------------------------------------------------------
 #General
+
+
 readSamplesReport <- function(filePath, type){
-  
-  if (type == "DIA"){
-    #The file will contain a variable number of uncommented metadata.  This reads the first 100 lines,
-    #Finds the column row and sets skip value to that - 1.
-    
+  if (type == "DIA") {
     first_read <- readLines(filePath)
     file_length <- length(first_read)
     skip_number <- grep("Visible", first_read) - 1
-    
-    read_csv(filePath, skip = skip_number, na = c("", "Missing Value"), n_max = file_length - skip_number - 2) %>%
-      {purrr::set_names(., gsub(" ", "_", names(.)))} %>%
-      filter(!is.na(Visible)) %>% #Removes END OF FILE line
-      rename(id = `#`) %>%
-      filter(!grepl("\\.", id)) %>% #Removes protein clusters, keeps protein group
-      filter(!grepl("DECOY", Protein_Name))
-  } else if (type == "TMT"){
-    read_tsv(filePath, guess_max = 10000) %>%
-      {purrr::set_names(., gsub(" ", "_", names(.)))}
-  } else if (type == "MaxQuant"){
-    read_tsv(filePath, guess_max = 10000) %>%
-      {purrr::set_names(., gsub(" ", "_", names(.)))}
+    read_csv(filePath, skip = skip_number, na = c("", "Missing Value"), 
+             n_max = file_length - skip_number - 2) %>% {
+               purrr::set_names(., gsub(" ", "_", names(.)))
+             } %>% filter(!is.na(Visible)) %>% rename(id = `#`) %>% 
+      filter(!grepl("\\.", id)) %>% filter(!grepl("DECOY", 
+                                                  Protein_Name))
   }
-  
+  else if (type == "TMT") {
+    read_tsv(filePath, guess_max = 10000) %>% {
+      purrr::set_names(., gsub(" ", "_", names(.)))
+    }
+  }
+  else if (type == "MaxQuant") {
+    read_tsv(filePath, guess_max = 10000) %>% {
+      purrr::set_names(., gsub(" ", "_", names(.)))
+    }
+  }
 }
+
+readQuantReport <- function(filePath, type){
+  x1 <- read_tsv(filePath, guess_max = 10000) %>%
+    {purrr::set_names(., gsub(" ", "_", names(.)))} %>%
+    select(PG.ProteinGroups, PG.Genes, PG.ProteinDescriptions, PG.UniProtIds, contains("raw.PG.Quantity")) %>%
+    distinct() %>%
+    rownames_to_column("id")
+  return(x1)
+}
+
 
 readPeptideReport <- function(filePath, type){
   a <- read.csv(filePath, nrows = 1)
@@ -56,6 +66,17 @@ readPeptideTxt <- function(filePath, type){
   read_tsv(filePath, guess_max = 10000) %>%
     {purrr::set_names(., gsub(" ", "_", names(.)))} %>%
     {purrr::set_names(., gsub("Intensity\\_", "iBAQ_", names(.)))}
+}
+
+readPeptideSpectronaut <- function(filePath, type){
+  read_tsv(filePath, guess_max = 10000) %>%
+    rename(Intensity = `EG.TotalQuantity (Settings)`) %>%
+    filter(!is.nan(Intensity)) %>%
+    mutate(R.FileName = paste0("raw_", R.FileName)) %>%
+    select(R.FileName, EG.PrecursorId, PG.ProteinAccessions, PG.ProteinDescriptions, PG.ProteinNames, Intensity) %>%
+    spread(R.FileName, Intensity) %>%
+    mutate(id = as.double(rownames(.))) %>%
+    select(id, everything())
 }
 
 make_observation_required_table <- function(group_table, x1){
@@ -349,6 +370,19 @@ makeProteinMeta <- function(x, type){
              Gene_name = stringr::str_extract(Fasta_headers, "(?<=GN\\=)[^\\|]+(?= PE\\=)"),
              Uniprot_ID = stringr::str_extract(Fasta_headers, "(?<=\\|)[^\\|]+(?=\\|)"))
   }
+  
+  else if (type == "Spectronaut") {
+    
+    column_test <- c("id", "PG.ProteinDescriptions", "PG.ProteinGroups", "PG.Genes", "PG.UniProtIds")
+    column_test <- column_test[column_test %in% names(x)]
+    
+    x %>%
+      select(one_of(column_test)) %>%
+      mutate(Protein_Name = PG.ProteinGroups) %>%
+      mutate(Description = PG.ProteinDescriptions,
+             Gene_name = PG.Genes,
+             Uniprot_ID = PG.UniProtIds)
+  }
 
 }
 
@@ -362,6 +396,14 @@ makePeptideMeta <- function(x, type){
   else if (type == "MaxQuant") {
     x %>%
       select(id, Sequence, Protein_group_IDs, Proteins, Gene_names, Protein_names, Charge = Charges, Score)
+    
+  }
+  
+  else if (type == "Spectronaut") {
+    x %>%
+      mutate(Sequence = str_extract(EG.PrecursorId, "(?<=\\_).*(?=\\_)"),
+             Charge = str_extract(EG.PrecursorId, "(?<=\\.).*$")) %>%
+      select(id, Sequence, Charge, EG.PrecursorId, PG.ProteinAccessions, PG.ProteinDescriptions, PG.ProteinNames)
     
   }
 }
@@ -463,16 +505,25 @@ make_contrast_list <- function(sampleTable, projectName){
 
 #Only used in Shiny
 makeSampleNameTable <- function(protein_df, type){
-
-
-  if(type == "DIA"){
+  
+  
+  
+  if (type == "Spectronaut"){
+    x1 <- grep("raw\\.PG\\.Quantity", names(protein_df), value = TRUE)
+    return(tibble::tibble(Data_name = x1,
+                          Sample_name = paste0("Sample_", seq_along(x1)),
+                          Type = "Lysate",
+                          Group = "A",
+                          Batch = 1,
+                          Reference = "N"))
+  } else if(type == "DIA"){
     x1 <- grep("\\.", names(protein_df))
   } else if (type == "TMT"){
     x1 <- grep("Reporter\\_intensity\\_corrected\\_.{3,}", names(protein_df))
   } else if (type == "MaxQuant"){
     x1 <- grep("iBAQ\\_", names(protein_df))
   }
-
+  
   tibble::tibble(Data_name = names(protein_df)[x1],
                  Sample_name = paste0("Sample_", seq_along(x1)),
                  Type = "Lysate",
@@ -481,6 +532,7 @@ makeSampleNameTable <- function(protein_df, type){
                  Reference = "N"
   )
 }
+
 
 readSampleNameTable <- function(sampleFile){
   x1 <- read_tsv(sampleFile)
