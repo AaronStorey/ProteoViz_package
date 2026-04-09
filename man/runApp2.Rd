@@ -2,10 +2,13 @@
 % Please edit documentation in R/Run_app2_shiny.R
 \name{runApp2}
 \alias{runApp2}
-\title{Runs the Shiny TMT App}
+\title{Runs the Shiny App2 Statistical Analysis}
 \usage{
-runApp2()
+runApp2(options = list())
+}
+\arguments{
+\item{options}{A list of options passed to \code{shiny::shinyApp()}.}
 }
 \description{
-Runs the Shiny TMT App
+Runs the Shiny App2 Statistical Analysis
 }

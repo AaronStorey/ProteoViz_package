@@ -1,25 +1,44 @@
-Package: ProteovizPackageTest
+Package: ProteoViz
 Type: Package
-Title: What the Package Does (Title Case)
-Version: 0.1.0
+Title: ProteoViz: Interactive Proteomics Data Analysis
+Version: 0.2.0
 Author: Who wrote it
 Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Description: Provides interactive Shiny dashboards and scriptable core functions
+    for processing, normalising, and statistically analysing quantitative
+    proteomics data from DIA (EncyclopeDIA) and Spectronaut workflows. The core
+    functions can be used independently of the Shiny interface for reproducible
+    scripted analyses.
+License: GPL (>= 3)
 Encoding: UTF-8
-LazyData: true
-biocViews:
 Depends:
-    tidyverse,
+    R (>= 4.1.0)
+Imports:
+    dplyr,
+    tidyr,
+    tibble,
+    readr,
+    purrr,
+    ggplot2,
+    plotly,
+    limma,
+    heatmaply,
+    ComplexHeatmap,
+    circlize,
+    shiny,
     shinydashboard,
     rhandsontable,
-    limma,
-    ComplexHeatmap,
-    heatmaply,
-    shiny,
-    cowplot,
     UpSetR,
-    plotly,
-    ggsci
-RoxygenNote: 7.1.0
+    RColorBrewer,
+    cowplot,
+    ggsci,
+    vsn,
+    preprocessCore,
+    NormalyzerDE,
+    stringr,
+    grid,
+    grDevices,
+    stats
+Suggests:
+    devtools
+RoxygenNote: 7.3.3

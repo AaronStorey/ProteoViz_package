@@ -1,4 +1,5 @@
 #' Runs the Shiny DIA App
+#' @param options A list of options passed to \code{shiny::shinyApp()}.
 #' @import dplyr
 #' @import purrr
 #' @import readr
@@ -10,7 +11,7 @@
 #' @import limma
 #' @import shiny
 #' @import cowplot
-#' @import plotly
+#' @importFrom plotly ggplotly layout plotlyOutput renderPlotly
 #' @export
 runApp1DIA <- function(options = list()){
   theme_set(theme_cowplot())
@@ -26,7 +27,7 @@ runApp1DIA <- function(options = list()){
 
 
 
-  Box1 <- {
+  import_files_box <- {
     fluidRow(
       box(
         width = 12,
@@ -34,7 +35,7 @@ runApp1DIA <- function(options = list()){
         fileInput("proteinFile", "Protein Samples Report"),
         fileInput("peptideFile", "Peptide Quant Report"),
         fileInput("sampleFile", "Import sample file"),
-        rHandsontableOutput("sampleNameTable"),
+        rHandsontableOutput("sample_table"),
         br(),
         actionButton("saveSampleNameTable", "Save Table"),
         tableOutput("Output1"),
@@ -55,7 +56,7 @@ runApp1DIA <- function(options = list()){
 
   Import_tab <- {
     tabItem("Import",
-            Box1
+            import_files_box
             #Box2
     )
   }
@@ -65,16 +66,16 @@ runApp1DIA <- function(options = list()){
 
 
 
-  Box3 <- {
+  protein_qc_controls_box <- {
     fluidRow(
       box(
         width = 12,
         fluidRow(
           column(width= 3,
-                 selectInput("P1exclude", "Samples to exclude:", choices = NULL, multiple = TRUE, selectize = TRUE)
+                 selectInput("samples_to_exclude", "Samples to exclude:", choices = NULL, multiple = TRUE, selectize = TRUE)
           ),
           column(width = 3,
-                 selectInput("P1groupexclude", "Groups to exclude:", choices = NULL, multiple = TRUE, selectize = TRUE)
+                 selectInput("groups_to_exclude", "Groups to exclude:", choices = NULL, multiple = TRUE, selectize = TRUE)
           ),
           column(width = 2,
                  checkboxInput("P1log2", "log2 transform", value = TRUE),
@@ -84,25 +85,25 @@ runApp1DIA <- function(options = list()){
                  checkboxInput("P1Normcheckbox", "Normalize to Reference channels"),
                  checkboxInput("P1checkbox", "Plot output", value = TRUE))
         ),
-        plotOutput("P1")
+        plotOutput("pre_norm_boxplot")
       )
     )
   }
 
 
-  Box4 <- {
+  group_observation_criteria_box <- {
     fluidRow(
       box(
         title = "Required number of observations for each group:",
         width = 12,
         fluidRow(column(12, checkboxInput("NaP3checkbox", "Plot missing values", value = FALSE))),
-        fluidRow(column(12, uiOutput("groupSlider"))),
-        plotOutput("NaP3")
+        fluidRow(column(12, uiOutput("group_sliders"))),
+        plotOutput("missing_value_plot")
       )
     )
   }
 
-  Box4_5 <- {
+  global_observation_criteria_box <- {
     fluidRow(
       box(
         width = 6,
@@ -118,7 +119,7 @@ runApp1DIA <- function(options = list()){
 
 
 
-  Box5 <- {
+  normalization_controls_box <- {
     fluidRow(
       box(
         width = 12,
@@ -140,16 +141,16 @@ runApp1DIA <- function(options = list()){
           width = 12,
           tabPanel(
             "Boxplot",
-            plotOutput("P2")
+            plotOutput("post_norm_boxplot")
           ),
           tabPanel(
             "PCA",
-            plotlyOutput("P3")
+            plotlyOutput("pca_plot")
           ),
           tabPanel(
             "Correlation",
             checkboxInput("CorP3check", "Scale by row"),
-            plotOutput("CorP3")
+            plotOutput("correlation_plot")
           )
         )
       )
@@ -158,7 +159,7 @@ runApp1DIA <- function(options = list()){
 
 
 
-  Box6 <- {
+  protein_export_box <- {
     fluidRow(
       box(
         column(3, actionButton("P1dfbutton", "Save quantitative table")),
@@ -169,7 +170,7 @@ runApp1DIA <- function(options = list()){
     )
   }
   
-  Box7 <- {
+  peptide_export_box <- {
     fluidRow(
       box(
         width = 6,
@@ -181,12 +182,12 @@ runApp1DIA <- function(options = list()){
 
   ProteinNorm_tab <- {
     tabItem("ProteinNorm",
-            Box3,
-            Box4,
-            Box4_5,
-            Box5,
-            Box6,
-            Box7)
+            protein_qc_controls_box,
+            group_observation_criteria_box,
+            global_observation_criteria_box,
+            normalization_controls_box,
+            protein_export_box,
+            peptide_export_box)
   }
 
 
@@ -217,61 +218,48 @@ runApp1DIA <- function(options = list()){
     # Credit: Steffan's ProteoNorm app
     # Creates handsontable where metaData1() will be edited
 
-    sampleNameTable <- reactive({
+    sample_table <- reactive({
       if (isTruthy(input$sampleFile)) {
-        readSampleNameTable(input$sampleFile$datapath) %>%
+        read_sample_name_table(input$sampleFile$datapath) %>%
           rhandsontable() %>%
           hot_col("Data_name", readOnly = T)
-      } else if (isTruthy(protein_df())){
-        makeSampleNameTable(protein_df(), type = type) %>%
-          as.data.frame() %>%
-          rhandsontable() %>%
-          hot_col("Data_name", readOnly = T)
-      }
-    })
-    
-    sampleNameTable <- reactive({
-      if (isTruthy(input$sampleFile)) {
-        readSampleNameTable(input$sampleFile$datapath) %>%
-          rhandsontable() %>%
-          hot_col("Data_name", readOnly = T)
-      } else if(isTruthy(protein_df())){
-        x1 <- makeSampleNameTable(protein_df(), type = type) %>%
+      } else if(isTruthy(protein_data())){
+        x1 <- make_sample_name_table(protein_data(), type = type) %>%
           as.data.frame() %>%
           rhandsontable() %>%
           hot_col("Data_name", readOnly = T)
         return(x1)
       }
-      
-      
+
+
     })
 
     # Outputs the Rhandsontable
-    output$sampleNameTable <- renderRHandsontable({
-      req(sampleNameTable())
-      if(isTruthy(sampleNameTable())){
-        sampleNameTable()
+    output$sample_table <- renderRHandsontable({
+      req(sample_table())
+      if(isTruthy(sample_table())){
+        sample_table()
       }
     })
 
     # Changes the handsontable back into a dataframe
-    sampleNameTable2 <- reactive({
-      if(is.null(input$sampleNameTable)) return (NULL)
-      req(input$sampleNameTable)
-      df <- hot_to_r(input$sampleNameTable)
+    sample_table_df <- reactive({
+      if(is.null(input$sample_table)) return (NULL)
+      req(input$sample_table)
+      df <- hot_to_r(input$sample_table)
       df
     })
 
     # Removes excluded samples and groups from table
-    sampleNameTable3 <- reactive({
-      req(sampleNameTable2())
-      req(!is.null(sampleNameTable2()))
-      req(length(sampleNameTable2()$Group) > 0)
-      req(any(!is.na(sampleNameTable2()$Group)))
-      x1 <- input$P1exclude
-      x2 <- input$P1groupexclude
+    sample_table_filtered <- reactive({
+      req(sample_table_df())
+      req(!is.null(sample_table_df()))
+      req(length(sample_table_df()$Group) > 0)
+      req(any(!is.na(sample_table_df()$Group)))
+      x1 <- input$samples_to_exclude
+      x2 <- input$groups_to_exclude
 
-      sampleNameTable2() %>%
+      sample_table_df() %>%
         filter(!Sample_name %in% x1,
                !Group %in% x2)
     })
@@ -279,16 +267,16 @@ runApp1DIA <- function(options = list()){
 
     # Observers to update selection box
     observe({
-      req(sampleNameTable2())
+      req(sample_table_df())
 
-      df <- sampleNameTable2()
+      df <- sample_table_df()
 
       x1 <- df$Sample_name
       x2 <- unique(df$Group)
 
-      updateSelectInput(session, "P1exclude",
+      updateSelectInput(session, "samples_to_exclude",
                         choices = x1)
-      updateSelectInput(session, "P1groupexclude",
+      updateSelectInput(session, "groups_to_exclude",
                         choices = x2)
     })
 
@@ -298,18 +286,18 @@ runApp1DIA <- function(options = list()){
       project_name <- input$projectName
       if(!dir.exists(project_name)) dir.create(project_name)
 
-      sampleNameTable2() %>%
+      sample_table_df() %>%
         write_tsv(paste0(project_name, "/", project_name, "_", "Sample_name_table.tsv"))
     })
 
 
     # Group tables ------------------------------------------------------------------
     #Counts the number of Samples in each group, after excluding specified groups/samples
-    groupTable <- reactive({
-      req(sampleNameTable3())
-      req(!is.null(sampleNameTable3()))
-      req(length(unique(sampleNameTable3()$Group)) > 0)
-      sampleNameTable3() %>%
+    group_counts <- reactive({
+      req(sample_table_filtered())
+      req(!is.null(sample_table_filtered()))
+      req(length(unique(sample_table_filtered()$Group)) > 0)
+      sample_table_filtered() %>%
         count(Group, name = "Number_of_samples") %>%
         ungroup()
     })
@@ -317,11 +305,11 @@ runApp1DIA <- function(options = list()){
     #Table that lists required number of observations for each group,
     #as specified from the input sliders
 
-    groupTable2 <- reactive({
-      req(groupTable())
-      req(!is.null(groupTable()))
+    group_observation_requirements <- reactive({
+      req(group_counts())
+      req(!is.null(group_counts()))
 
-      group_tbl <- groupTable()
+      group_tbl <- group_counts()
 
       slider_data <- map(group_tbl$Group, ~input[[paste0("slider", .x)]]) %>%
         unlist() %>%
@@ -329,20 +317,19 @@ runApp1DIA <- function(options = list()){
 
       if(length(slider_data) != nrow(group_tbl)) return (NULL)
 
-      group_tbl$req_observations <- slider_data
+      x1 <- tibble::tibble(Group = group_tbl$Group, req_observations = slider_data)
 
-      #group_tbl
-      group_tbl
+      make_observation_required_table(group_tbl, x1)
 
     })
 
 
     #Update global requirement slider
     observe({
-      req(groupTable())
+      req(group_counts())
 
-      Biggest_group <- max(groupTable()$Number_of_samples)
-      Number_of_groups <- length(unique(groupTable()$Group))
+      Biggest_group <- max(group_counts()$Number_of_samples)
+      Number_of_groups <- length(unique(group_counts()$Group))
 
       updateSliderInput(session, "GlobalGroupX",
                         max = Biggest_group)
@@ -354,21 +341,21 @@ runApp1DIA <- function(options = list()){
     # Protein dfs -------------------------------------------------------------
 
     #Import
-    protein_df <- reactive({
+    protein_data <- reactive({
       if(isTruthy(input$proteinFile)){
         x1 <- input$proteinFile
         req(input$proteinFile)
         if(grepl("quant\\_report", x1$name)){
-          readQuantReport(x1$datapath, type)
-        } else readSamplesReport(x1$datapath, type)
+          read_quant_report(x1$datapath, type)
+        } else read_samples_report(x1$datapath, type)
 
       } else if(isTruthy(input$peptideFile)){
 
         x1 <- input$peptideFile
         req(input$peptideFile)
-        readPeptideReport(x1$datapath, type)
+        read_peptide_report(x1$datapath, type)
       }
-      
+
     })
     
     quant_data <- reactive({
@@ -388,84 +375,88 @@ runApp1DIA <- function(options = list()){
     })
 
     #Exclude samples, tidy, transform (log2, remove 0s, NormalizeRefs)
-    protein_df2 <- reactive({
-      req(protein_df())
-      req(sampleNameTable3())
+    protein_data_clean <- reactive({
+      req(protein_data())
+      req(sample_table_filtered())
 
-      clean_protein_df(protein_df(), sampleNameTable3())
+      clean_protein_data(protein_data(), sample_table_filtered(),
+                         log2_transform = input$P1log2,
+                         remove_zeros   = input$P1remove)
 
     })
 
     #Filter for proteins that meet observation criteria
-    protein_df3 <- reactive({
-      req(protein_df2())
-      req(groupTable2())
+    protein_data_filtered <- reactive({
+      req(protein_data_clean())
+      req(group_observation_requirements())
       req(input$GlobalGroupX)
       req(input$GlobalGroupY)
 
-      filter_protein_df(protein_df2(), groupTable2(), input$GlobalGroupX, input$GlobalGroupY)
+      filter_missing_values(protein_data_clean(), group_observation_requirements(),
+                            min_per_group = input$GlobalGroupX,
+                            min_groups    = input$GlobalGroupY)
 
     })
 
-    #To matrix
-    protein_df4 <- reactive({
-      req(protein_df3())
-      protein_df_to_matrix(protein_df3())
+    #To matrix (retained for any downstream use; not passed to normalization)
+    protein_data_matrix <- reactive({
+      req(protein_data_filtered())
+      protein_df_to_matrix(protein_data_filtered())
     })
 
-    #Normalize
-    protein_df5 <- reactive({
-      req(protein_df4())
+    #Normalize — normalize_intensities() takes and returns long-form data
+    protein_data_normalized <- reactive({
+      req(protein_data_filtered())
       req(input$normOption)
       req(input$normCheckbox == TRUE)
 
-      normalize_protein_df(protein_df4(), input$normOption)
+      normalize_intensities(protein_data_filtered(), method = input$normOption)
 
     })
 
-    #Back to tidy
-    protein_df6 <- reactive({
-      req(protein_df5())
-      matrix_to_long_form(protein_df5())
+    #Long-form normalized data — same reactive, aliased for clarity
+    protein_data_long <- reactive({
+      req(protein_data_normalized())
+      protein_data_normalized()
 
     })
 
 
 
     # Plots -------------------------------------------------------------------
-    output$P1 <- renderPlot({
-      req(protein_df2())
+    output$pre_norm_boxplot <- renderPlot({
+      req(protein_data_clean())
       req(input$P1checkbox == TRUE)
-      req(sampleNameTable2())
+      req(sample_table_filtered())
 
-      make_boxplot(protein_df2(), sampleNameTable2())
+      plot_intensity_distributions(protein_data_clean(), sample_table_filtered())
     })
 
-    output$P2 <- renderPlot({
-      req(protein_df6())
-      req(sampleNameTable3())
-      make_boxplot2(protein_df6(), sampleNameTable3())
+    output$post_norm_boxplot <- renderPlot({
+      req(protein_data_long())
+      req(sample_table_filtered())
+      plot_intensity_distributions(protein_data_long(), sample_table_filtered())
     })
 
-    output$P3 <- renderPlotly({
-      req(protein_df5())
-      req(sampleNameTable3())
+    output$pca_plot <- renderPlotly({
+      req(protein_data_long())
+      req(sample_table_filtered())
 
-      PCA_plotly(protein_df5(), sampleNameTable3())
+      plot_pca(protein_data_long(), sample_table_filtered())
 
     })
 
-    output$CorP3 <- renderPlot({
-      req(protein_df6())
-      req(sampleNameTable3())
-      make_cor_plot(protein_df6(), sampleNameTable3(), scaleRows = input$CorP3check)
+    output$correlation_plot <- renderPlot({
+      req(protein_data_long())
+      req(sample_table_filtered())
+      plot_correlation_heatmap(protein_data_long(), sample_table_filtered(), scale_rows = input$CorP3check)
     })
 
-    output$NaP3 <- renderPlot({
-      req(protein_df3())
-      req(sampleNameTable3())
+    output$missing_value_plot <- renderPlot({
+      req(protein_data_clean())
+      req(sample_table_filtered())
       if(input$NaP3checkbox){
-        make_NA_plot(protein_df3(), sampleNameTable3())
+        plot_missing_values(protein_data_clean(), sample_table_filtered())
       }
     })
 
@@ -473,9 +464,9 @@ runApp1DIA <- function(options = list()){
     # Extra -------------------------------------------------------------------
 
     #Reactive rendering of slider inputs
-    output$groupSlider <- renderUI({
-      req(groupTable())
-      df <- groupTable()
+    output$group_sliders <- renderUI({
+      req(group_counts())
+      df <- group_counts()
       a <- list()
       for(i in seq_along(df$Group)){
         a[[i]] <- column(3,
@@ -495,47 +486,47 @@ runApp1DIA <- function(options = list()){
     #Save df
     observeEvent(input$P1dfbutton, {
       req(input$projectName)
-      req(protein_df6())
-      req(sampleNameTable3())
-      save_quantitative_data(protein_df6(), input$projectName, sampleNameTable3(), "protein")
+      req(protein_data_long())
+      req(sample_table_filtered())
+      save_quantitative_data(protein_data_long(), input$projectName, sample_table_filtered(), "protein")
     })
     
     observeEvent(input$P1peptidedfbutton, {
       req(input$projectName)
-      req(protein_df6())
-      req(sampleNameTable3())
-      save_quantitative_data(protein_df6(), input$projectName, sampleNameTable3(), "peptide")
+      req(protein_data_long())
+      req(sample_table_filtered())
+      save_quantitative_data(protein_data_long(), input$projectName, sample_table_filtered(), "peptide")
     })
 
     observeEvent(input$saveProteinMeta, {
-      req(protein_df())
+      req(protein_data())
       req(input$projectName)
 
-      save_protein_meta(protein_df(), input$projectName, type)
+      save_protein_meta(protein_data(), input$projectName, type)
     })
     
     observeEvent(input$savePeptideMeta, {
-      req(protein_df())
+      req(protein_data())
       req(input$projectName)
       
-      save_peptide_meta(protein_df(), input$projectName, type)
+      save_peptide_meta(protein_data(), input$projectName, type)
     })
 
     observeEvent(input$saveDesignTable, {
-      req(sampleNameTable3())
+      req(sample_table_filtered())
       req(input$projectName)
-      save_design_table(sampleNameTable3(), input$projectName)
+      save_design_table(sample_table_filtered(), input$projectName)
     })
 
     observeEvent(input$makeContrastList, {
-      req(sampleNameTable3())
+      req(sample_table_filtered())
       req(input$projectName)
-      make_contrast_list(sampleNameTable3(), input$projectName)
+      make_contrast_list(sample_table_filtered(), input$projectName)
     })
 
 
 
-    output$Output1 <- renderTable(head(protein_df()))
+    output$Output1 <- renderTable(head(protein_data()))
     output$Output2 <- renderText({
       req(input$proteinFile)
       input$proteinFile$datapath

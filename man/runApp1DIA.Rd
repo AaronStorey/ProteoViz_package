@@ -4,7 +4,10 @@
 \alias{runApp1DIA}
 \title{Runs the Shiny DIA App}
 \usage{
-runApp1DIA()
+runApp1DIA(options = list())
+}
+\arguments{
+\item{options}{A list of options passed to \code{shiny::shinyApp()}.}
 }
 \description{
 Runs the Shiny DIA App

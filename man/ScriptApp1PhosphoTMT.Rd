@@ -22,6 +22,37 @@ ScriptApp1PhosphoTMT(
   type
 )
 }
+\arguments{
+\item{project_name}{Character string used as a prefix for output files.}
+
+\item{protein_file}{Path to the protein quantification input file.}
+
+\item{samples_file}{Path to the sample name table file.}
+
+\item{phospho_file}{Path to the phosphosite input file.}
+
+\item{P1exclude}{Character vector of sample names to exclude.}
+
+\item{P1groupexclude}{Character vector of group names to exclude.}
+
+\item{GlobalGroupX}{Name of the reference group for contrast.}
+
+\item{GlobalGroupY}{Name of the comparison group for contrast.}
+
+\item{required_observations}{Minimum number of observations required per group.}
+
+\item{normalization_option}{Character string specifying the normalization method.}
+
+\item{log2_check}{Logical; whether to apply log2 transformation.}
+
+\item{remove_0_values}{Logical; whether to replace zeros with NA.}
+
+\item{normalize_to_reference}{Logical; whether to normalise to reference channels.}
+
+\item{normalize_to_protein}{Logical; whether to normalise phospho to protein.}
+
+\item{type}{Character string specifying the input data type.}
+}
 \description{
 Processes a MaxQuant PhosphoTMT data set and outputs Limma-ready tables
 }

@@ -1,4 +1,5 @@
 #' Runs the Shiny MaxQuant App
+#' @param options A list of options passed to \code{shiny::shinyApp()}.
 #' @import dplyr
 #' @import purrr
 #' @import readr
@@ -10,7 +11,7 @@
 #' @import limma
 #' @import shiny
 #' @import cowplot
-#' @import plotly
+#' @importFrom plotly ggplotly layout plotlyOutput renderPlotly
 #' @export
 runApp1MaxQuant <- function(options = list()){
   

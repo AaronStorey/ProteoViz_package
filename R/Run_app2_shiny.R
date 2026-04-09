@@ -1,11 +1,12 @@
-#' Runs the Shiny TMT App
-#' @import tidyverse
+#' Runs the Shiny App2 Statistical Analysis
+#' @param options A list of options passed to \code{shiny::shinyApp()}.
+#' @import stringr
 #' @import shinydashboard
 #' @import rhandsontable
 #' @import limma
 #' @import shiny
 #' @import cowplot
-#' @import plotly
+#' @importFrom plotly ggplotly layout plotlyOutput renderPlotly
 #' @import heatmaply
 #' @import UpSetR
 #' @import ggsci
@@ -125,7 +126,7 @@ runApp2 <- function(options = list()){
 # Module testing ----------------------------------------------------------
 
 
-  Box0_1 <- {
+  file_upload_box <- {
     fluidRow(
       tabBox(id = "fileInputTab", width = 12,
              tabPanel("Upload multiple files",
@@ -142,7 +143,7 @@ runApp2 <- function(options = list()){
 
 
 
-  Box2 <- {
+  experimental_design_box <- {
     fluidRow(
       tabBox(
         id = "Samplegrouping",
@@ -151,7 +152,7 @@ runApp2 <- function(options = list()){
         tabPanel(
           "Table",
           fileInput("sampleFile", "Import sample file"),
-          rHandsontableOutput("sampleNameTable")
+          rHandsontableOutput("sample_table")
         ),
         tabPanel(
           "Buttons",
@@ -165,83 +166,83 @@ runApp2 <- function(options = list()){
         width = 5,
         title = "Design matrix",
         checkboxInput("blockCheck", "Blocked design"),
-        rHandsontableOutput("T2")
+        rHandsontableOutput("design_matrix_table")
       ),
       box(
         width = 2,
         title = "Contrast matrix",
         fileInput("contrastFile", "Import contrast list"),
-        rHandsontableOutput("T3")
+        rHandsontableOutput("contrast_table")
       )
 
     )
   }
 
-  Box3 <- {
+  test_results_table_box <- {
     fluidRow(
       box(
         width = 6,
-        title = "T4",
-        tableOutput("T4")
+        title = "test_results_table_1",
+        tableOutput("test_results_table_1")
       ),
       box(
         width = 6,
-        title = "T5",
-        tableOutput("T5")
+        title = "test_results_table_2",
+        tableOutput("test_results_table_2")
       )
     )
   }
 
-  Box4 <- {
+  test_results_table_box2 <- {
     fluidRow(
       box(
         width = 6,
-        title = "T6",
-        tableOutput("T6")
+        title = "test_results_table_3",
+        tableOutput("test_results_table_3")
       ),
       box(
         width = 6,
-        title = "T7",
-        tableOutput("T7")
+        title = "test_results_table_4",
+        tableOutput("test_results_table_4")
       )
     )
   }
 
-  Box5 <- {
+  limma_plot_box <- {
     fluidRow(
       box(
         width = 12,
-        title = "P7",
-        plotOutput("P7")
+        title = "test_summary_plot",
+        plotOutput("test_summary_plot")
       )
     )
   }
 
-  BoxP8 <- {
+  upset_diagram_box <- {
     fluidRow(
       box(
         width = 12,
         title = "P8 Venn",
-        plotOutput("P8",
+        plotOutput("upset_plot",
                    height = "900px")
       )
     )
   }
 
-  BoxP9 <- {
+  set_selection_box <- {
     fluidRow(
       box(
         width = 12,
         title = "P9 Set Selection",
-        selectInput("P9select", "Select sets", choices = NULL, selected = NULL,
+        selectInput("set_selector", "Select sets", choices = NULL, selected = NULL,
                     multiple = TRUE, width = "50%"),
-        tableOutput("P9"),
+        tableOutput("selected_set_table"),
         actionButton("saveSets", "Extract and save all sets")
       )
     )
   }
 
-  Box6 <- {
+  data_export_box <- {
     fluidRow(
       box(
         width = 12,
@@ -257,14 +258,14 @@ runApp2 <- function(options = list()){
     tabItem("Limma",
             #Box0,
             # Box1,
-            Box0_1,
-            Box2,
-            # Box3,
-            # Box4,
-            Box5,
-            BoxP8,
-            BoxP9,
-            Box6
+            file_upload_box,
+            experimental_design_box,
+            # test_results_table_box,
+            # test_results_table_box2,
+            limma_plot_box,
+            upset_diagram_box,
+            set_selection_box,
+            data_export_box
     )
   }
 
@@ -508,7 +509,7 @@ runApp2 <- function(options = list()){
     # 
     # })
     
-    sampleNameTable <- reactive({
+    sample_table <- reactive({
       col_check <- c("Sample_name", "Group", "Batch", "Block")
       
       if(isTruthy(input$allUpload)){
@@ -550,21 +551,21 @@ runApp2 <- function(options = list()){
     })
 
     # Outputs the Rhandsontable
-    output$sampleNameTable <- renderRHandsontable({
-      req(sampleNameTable())
-      sampleNameTable()
+    output$sample_table <- renderRHandsontable({
+      req(sample_table())
+      sample_table()
     })
 
     # Changes the handsontable back into a dataframe
-    sampleNameTable2 <- reactive({
-      if(is.null(input$sampleNameTable)) return (NULL)
-      df <- hot_to_r(input$sampleNameTable)
+    sample_table_df <- reactive({
+      if(is.null(input$sample_table)) return (NULL)
+      df <- hot_to_r(input$sample_table)
     })
     
     
     observe({
-      if(isTruthy(sampleNameTable2())){
-        x1 <- sampleNameTable2() %>%
+      if(isTruthy(sample_table_df())){
+        x1 <- sample_table_df() %>%
           select(Sample_name)
         updateSelectInput(session, "sampleGroupA",
                           choices = x1$Sample_name)
@@ -575,9 +576,9 @@ runApp2 <- function(options = list()){
     
     observe({
       req(input$sampleGroupA)
-      req(sampleNameTable2())
+      req(sample_table_df())
       
-      x1 <- sampleNameTable2() %>%
+      x1 <- sample_table_df() %>%
         select(Sample_name)
       x2 <- input$sampleGroupA
       x3 <- x1 %>%
@@ -588,8 +589,8 @@ runApp2 <- function(options = list()){
     })
     
     observeEvent(input$sampleActionButton, {
-      req(sampleNameTable2())
-      x1 <- sampleNameTable2() %>%
+      req(sample_table_df())
+      x1 <- sample_table_df() %>%
         select(Sample_name)
       x2 <- input$sampleGroupA
       x3 <- x1 %>%
@@ -606,25 +607,25 @@ runApp2 <- function(options = list()){
 
     # Design table ------------------------------------------------------------
     # design_table <- reactive({
-    #   req(sampleNameTable2())
-    #   makeDesignTable(sampleNameTable2())
+    #   req(sample_table_df())
+    #   makeDesignTable(sample_table_df())
     # })
     
     # design_table <- reactive({
-    #   req(sampleNameTable2())
+    #   req(sample_table_df())
     #   if(isTruthy(input$sampleGroupA)){
-    #     a <- sampleNameTable2() %>%
+    #     a <- sample_table_df() %>%
     #       mutate(Group = ifelse(Sample_name %in% input$sampleGroupA, "A", "B"))
     #     return(makeDesignTable(a))
     #   } else {
-    #     makeDesignTable(sampleNameTable2())
+    #     makeDesignTable(sample_table_df())
     #   }
     #   
     # }) %>% throttle(500)
     
     design_table <- reactive({
-      req(sampleNameTable2())
-      a <- sampleNameTable2()
+      req(sample_table_df())
+      a <- sample_table_df()
       
       if(isTruthy(input$sampleGroupA)){
         a <- a %>%
@@ -642,26 +643,26 @@ runApp2 <- function(options = list()){
           mutate(Group = ifelse(!Sample_name %in% a1, "C", Group))
       }
       
-      return(makeDesignTable(a))
-      
+      return(build_design_matrix(a))
+
     }) %>% debounce(200)
 
     sample_order <- reactive({
-      req(sampleNameTable2())
-      sampleNameTable2()$Sample_name
+      req(sample_table_df())
+      sample_table_df()$Sample_name
     })
 
     group_order <- reactive({
-      req(sampleNameTable2())
-      sampleNameTable2()$Group
+      req(sample_table_df())
+      sample_table_df()$Group
 
     })
 
 
     #Not sure whether to make the design matrix editable or not.
-    design_table2 <- reactive({
-      if(is.null(input$T2)) return (NULL)
-      df <- hot_to_r(input$T2)
+    design_matrix_df <- reactive({
+      if(is.null(input$design_matrix_table)) return (NULL)
+      df <- hot_to_r(input$design_matrix_table)
       df
     })
 
@@ -670,19 +671,19 @@ runApp2 <- function(options = list()){
     # Contrast table ----------------------------------------------------------
 
     contrast_table <- reactive({
-      if(is.null(input$T3)) return (NULL)
-      df <- hot_to_r(input$T3) %>%
+      if(is.null(input$contrast_table)) return (NULL)
+      df <- hot_to_r(input$contrast_table) %>%
         #Removes blank entries
         filter(Contrast_name != "")
       df
     })
 
 
-    contrast_list <- reactive({
-      req(design_table2())
+    contrast_table_df <- reactive({
+      req(design_matrix_df())
       req(contrast_table())
 
-      try(makeContrastTable(design_table2(), contrast_table()), silent = TRUE)
+      try(build_contrast_matrix(design_matrix_df(), contrast_table()), silent = TRUE)
     })
 
 
@@ -692,27 +693,27 @@ runApp2 <- function(options = list()){
     # Limma -------------------------------------------------------------------
     limma_output <- reactive({
       req(limma_input())
-      req(design_table2())
-      req(sampleNameTable2())
+      req(design_matrix_df())
+      req(sample_table_df())
 
-      runLimma(limma_input(), design_table2(), sampleNameTable2(), block = input$blockCheck)
+      run_limma(limma_input(), design_matrix_df(), sample_table_df(), block = input$blockCheck)
 
     })
 
     contrast_fit <- reactive({
       req(limma_output())
-      req(contrast_list())
+      req(contrast_table_df())
 
-      fitContrasts(limma_output(), contrast_list())
+      fit_contrasts(limma_output(), contrast_table_df())
     })
 
     combined_data <- reactive({
 
       req(contrast_fit())
-      req(design_table2())
+      req(design_matrix_df())
       req(contrast_table())
 
-      combineLimmaData(contrast_fit(), design_table(), contrast_table())
+      combine_limma_results(contrast_fit(), design_matrix_df(), contrast_table_df())
     })
 
     test_results <- reactive({
@@ -725,24 +726,24 @@ runApp2 <- function(options = list()){
     tidy_test_results <- reactive({
       req(test_results())
 
-      makeTidyTestResults(test_results())
+      make_tidy_test_results(test_results())
     })
 
     test_results_list <- reactive({
       req(tidy_test_results())
-      makeTidyTestResultsList(tidy_test_results())
+      make_test_results_list(tidy_test_results())
 
     })
 
 
     # Table plots -------------------------------------------------------------
-    output$T1 <- renderTable({
+    output$sample_table_preview <- renderTable({
       req(quant_data())
       quant_data() %>%
         dplyr::slice(1:10)
     })
 
-    output$T2 <- renderRHandsontable({
+    output$design_matrix_table <- renderRHandsontable({
       req(design_table())
 
       sample_names <- rownames(design_table())
@@ -757,7 +758,7 @@ runApp2 <- function(options = list()){
     })
 
 
-    output$T3 <- renderRHandsontable({
+    output$contrast_table <- renderRHandsontable({
       
       if(isTruthy(input$allUpload)){
         a <- as_tibble(input$allUpload) %>%
@@ -777,7 +778,7 @@ runApp2 <- function(options = list()){
           rhandsontable()
       } else {
         #Manual entry
-        req(sampleNameTable2())
+        req(sample_table_df())
         tibble(Contrast_name = "",
         ) %>%
           as.data.frame() %>%
@@ -790,30 +791,17 @@ runApp2 <- function(options = list()){
 
     # Save output -------------------------------------------------------------
     observeEvent(input$Save_output, {
+      req(quant_data())
       req(combined_data())
-      combined_data() %>%
-        write_tsv("Limma_output.tsv")
+      req(metadata())
+      write_limma_summary(quant_data(), combined_data(), metadata(), prefix = "")
     })
 
     observeEvent(input$Save_summary, {
       req(quant_data())
       req(combined_data())
       req(metadata())
-
-      spread_protein_limma <- combined_data() %>%
-        dplyr::select(id, logFC, P.Value, adj.P.Val, Comparison) %>%
-        gather(Type, Value, logFC, P.Value, adj.P.Val) %>%
-        unite(Type, Comparison, Type, sep = " ") %>%
-        spread(Type, Value) %>%
-        mutate(id = as.integer(id))
-
-      meta_df <- metadata() %>%
-        mutate(id = as.integer(id))
-
-      meta_df %>%
-        right_join(quant_data()) %>%
-        left_join(spread_protein_limma) %>%
-        write_tsv("Summarized_output.tsv")
+      write_limma_summary(quant_data(), combined_data(), metadata(), prefix = "Summarized")
     })
 
     observeEvent(input$saveSets, {
@@ -824,12 +812,13 @@ runApp2 <- function(options = list()){
         mutate(id = as.character(id))
 
       unnest(tidy_test_results(), data) %>%
-        group_by(id) %>%
+        group_by(protein) %>%
         summarize(Sets = str_c(Test, collapse = ", "),
                   Number_of_groups = length(Test)) %>%
-        dplyr::select(Number_of_groups, Sets, id) %>%
+        dplyr::select(Number_of_groups, Sets, protein) %>%
         ungroup() %>%
-        left_join(meta_df, by = "id") %>%
+        mutate(protein = as.character(protein)) %>%
+        left_join(meta_df, by = c("protein" = "id")) %>%
         arrange(desc(Number_of_groups)) %>%
         write_tsv("Extracted_sets.tsv")
     })
@@ -840,24 +829,24 @@ runApp2 <- function(options = list()){
 
     # Debugging ---------------------------------------------------------------
 
-    output$T4 <- renderTable({
-      req(contrast_list())
-      contrast_list()
+    output$test_results_table_1 <- renderTable({
+      req(contrast_table_df())
+      contrast_table_df()
     }, rownames = TRUE)
 
-    output$T5 <- renderTable({
+    output$test_results_table_2 <- renderTable({
       req(limma_output())
 
       head(limma_output()$coefficients)
     })
 
-    output$T6 <- renderTable({
+    output$test_results_table_3 <- renderTable({
       req(combined_data())
 
       head(combined_data())
     })
 
-    output$T7 <- renderTable({
+    output$test_results_table_4 <- renderTable({
       req(contrast_fit())
       req(contrast_table())
       x1 <- contrast_table()$Contrast_name %>%
@@ -866,7 +855,7 @@ runApp2 <- function(options = list()){
 
     })
 
-    output$P7 <- renderPlot({
+    output$test_summary_plot <- renderPlot({
       req(combined_data())
 
       df <- combined_data()
@@ -880,11 +869,11 @@ runApp2 <- function(options = list()){
         facet_wrap(~Comparison, scales = "free_y")
     })
 
-    output$P8 <- renderPlot({
+    output$upset_plot <- renderPlot({
 
       req(tidy_test_results())
 
-      a2 <- map(tidy_test_results()$data, "id")
+      a2 <- map(tidy_test_results()$data, "protein")
       names(a2) <- tidy_test_results()$Test
 
 
@@ -902,17 +891,17 @@ runApp2 <- function(options = list()){
 
       x2 <- unique(df$Test)
 
-      updateSelectInput(session, "P9select",
+      updateSelectInput(session, "set_selector",
                         choices = x2)
     })
     
 
-    output$P9 <- renderTable({
-      req(input$P9select)
+    output$selected_set_table <- renderTable({
+      req(input$set_selector)
       req(tidy_test_results())
       req(metadata())
 
-      queries <- input$P9select
+      queries <- input$set_selector
 
       a3 <- tidy_test_results() %>%
         unnest(data)
@@ -926,20 +915,20 @@ runApp2 <- function(options = list()){
       #   distinct(id)
 
       a4 <- a3 %>%
-        group_by(id) %>%
+        group_by(protein) %>%
         mutate(Number_of_groups = length(Test),
                Matches_query = Test %in% queries) %>%
         filter(all(Matches_query),
                Number_of_groups == length(queries)) %>%
         ungroup() %>%
-        distinct(id)
+        distinct(protein)
 
       meta_df <- metadata() %>%
         mutate(id = as.character(id))
 
       a5 <- a4 %>%
-        mutate(id = as.character(id)) %>%
-        left_join(meta_df)
+        mutate(protein = as.character(protein)) %>%
+        left_join(meta_df, by = c("protein" = "id"))
 
       a5
 
@@ -968,75 +957,23 @@ runApp2 <- function(options = list()){
                         choices = x1)
     })
 
-    excluded_groups <- reactive({
-      input$proteinHeatGroupExclude
-    }) %>%
-      debounce(750)
+    excluded_groups <- reactive({ character(0) })
 
     output$ProteinVolcanoplot <- renderPlotly({
-      req(combined_data)
+      req(combined_data())
       req(input$ProteinVolcanoComparison)
-      req(metadata())
 
       input$pv1button
       volcanoComparison <- isolate(input$ProteinVolcanoComparison)
       FCcutoff <- isolate(as.numeric(input$pv1FC))
       Pcutoff <- isolate(as.numeric(input$pv1pvalue))
 
-      protein_df <- metadata()
-
-
-      p1 <- combined_data() %>%
-        filter(Comparison %in% volcanoComparison,
-               abs(logFC) > FCcutoff,
-               adj.P.Val < Pcutoff) %>%
-        left_join(protein_df, by = "id")
-
-      p2 <- p1 %>%
-        ggplot(aes(x = logFC, y = -log10(adj.P.Val), key = id,
-                   text = paste0(
-                     "Protein: ",
-                     Description,
-                     "\n",
-                     "Gene name: ",
-                     Gene_name,
-                     "\n",
-                     "Uniprot ID: ",
-                     Uniprot_ID,
-                     "\n",
-                     "Log2 fold change: ",
-                     signif(logFC, 4),
-                     "\n",
-                     "p.value: ",
-                     signif(adj.P.Val, 4),
-                     "\n",
-                     "id: ",
-                     id,
-                     "\n"
-                   )
-        )) +
-        geom_point() +
-        geom_hline(yintercept = -log10(.05), linetype = "dotted") +
-        geom_vline(xintercept = log2(1.5), linetype = "dotted") +
-        geom_vline(xintercept = -log2(1.5), linetype = "dotted") +
-        labs(x = "log2 FC", y= "-log10 adj.p.value")
-
-      if(isTruthy(input$ProteinSearch)){
-        p_search <- protein_df %>%
-          filter(Protein_Name %in% input$ProteinSearch,
-          ) %>%
-          left_join(combined_data(), by = "id") %>%
-          filter(Comparison %in% volcanoComparison)
-
-        if(nrow(p_search) > 0){
-          p2 <- p2 +
-            geom_point(data = p_search, color = "red", size = 5)
-        }
-
-      }
-
-      ggplotly(p2, source = "proteinVolcano", tooltip = "text") %>%
-        layout(dragmode = "select")
+      plot_volcano(
+        combined_data() |> dplyr::filter(Comparison %in% volcanoComparison),
+        fc_threshold = FCcutoff,
+        p_threshold  = Pcutoff,
+        label_col    = "protein"
+      )
     })
 
     selected_data <- reactive({
@@ -1115,31 +1052,62 @@ runApp2 <- function(options = list()){
       req(input$phcheck)
       req(quant_data())
       req(metadata())
-      req(sample_order())
-      req(group_order())
       req(selected_data())
 
-      makeProteinHeatHeatmap(selected_data(), metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+      quant_long <- quant_data() |>
+        tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
+
+      plot_protein_heatmap(
+        quant_long,
+        metadata(),
+        proteins       = selected_data()$id,
+        scale_rows     = input$phscalecheck,
+        exclude_groups = excluded_groups()
+      )
     })
     
     output$peptideHeat <- renderPlotly({
       req(input$phcheck)
       req(peptide_click_table())
       req(peptide_metadata())
-      req(sample_order())
-      req(group_order())
-      
-      makePeptideHeatHeatmap(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+      req(protein_click_data())
+      req(metadata())
+
+      peptide_long <- peptide_click_table() |>
+        tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
+
+      protein_names <- metadata() |>
+        dplyr::filter(id %in% protein_click_data()$id) |>
+        dplyr::pull(Protein_Name)
+
+      plot_peptide_heatmap(
+        peptide_long,
+        metadata(),
+        proteins         = protein_names,
+        peptide_metadata = peptide_metadata()
+      )
     })
     
     downloadablePlotServer("peptideDLPlot", reactive({
       req(input$phcheck)
       req(peptide_click_table())
       req(peptide_metadata())
-      req(sample_order())
-      req(group_order())
-      
-      makePeptideHeatHeatmap2(peptide_click_table(), peptide_metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+      req(protein_click_data())
+      req(metadata())
+
+      peptide_long <- peptide_click_table() |>
+        tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
+
+      protein_names <- metadata() |>
+        dplyr::filter(id %in% protein_click_data()$id) |>
+        dplyr::pull(Protein_Name)
+
+      plot_peptide_heatmap(
+        peptide_long,
+        metadata(),
+        proteins         = protein_names,
+        peptide_metadata = peptide_metadata()
+      )
     }))
     
     
@@ -1147,11 +1115,18 @@ runApp2 <- function(options = list()){
       req(input$phcheck)
       req(quant_data())
       req(metadata())
-      req(sample_order())
-      req(group_order())
       req(selected_data())
-      
-      makeProteinHeatHeatmap2(selected_data(), metadata(), sample_order(), group_order(), excluded_groups(), input$phscalecheck)
+
+      quant_long <- quant_data() |>
+        tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
+
+      plot_protein_heatmap(
+        quant_long,
+        metadata(),
+        proteins       = selected_data()$id,
+        scale_rows     = input$phscalecheck,
+        exclude_groups = excluded_groups()
+      )
     }))
     
     

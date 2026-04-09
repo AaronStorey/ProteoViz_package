@@ -1,9 +1,21 @@
 #' Processes a MaxQuant PhosphoTMT data set and outputs Limma-ready tables
 #'
-#'
+#' @param project_name Character string used as a prefix for output files.
+#' @param protein_file Path to the protein quantification input file.
+#' @param samples_file Path to the sample name table file.
+#' @param phospho_file Path to the phosphosite input file.
+#' @param P1exclude Character vector of sample names to exclude.
+#' @param P1groupexclude Character vector of group names to exclude.
+#' @param GlobalGroupX Name of the reference group for contrast.
+#' @param GlobalGroupY Name of the comparison group for contrast.
+#' @param required_observations Minimum number of observations required per group.
+#' @param normalization_option Character string specifying the normalization method.
+#' @param log2_check Logical; whether to apply log2 transformation.
+#' @param remove_0_values Logical; whether to replace zeros with NA.
+#' @param normalize_to_reference Logical; whether to normalise to reference channels.
+#' @param normalize_to_protein Logical; whether to normalise phospho to protein.
+#' @param type Character string specifying the input data type.
 #' @export
-#'
-#'
 ScriptApp1PhosphoTMT <- function(project_name, protein_file, samples_file, phospho_file, P1exclude, P1groupexclude,
                                  GlobalGroupX, GlobalGroupY, required_observations, normalization_option,
                                  log2_check, remove_0_values, normalize_to_reference, normalize_to_protein,
@@ -79,10 +91,20 @@ ScriptApp1PhosphoTMT <- function(project_name, protein_file, samples_file, phosp
 
 #' Processes a ScaffoldDIA Samples Report and outputs Limma-ready tables
 #'
-#'
+#' @param project_name Character string used as a prefix for output files.
+#' @param protein_file Path to the protein quantification input file.
+#' @param samples_file Path to the sample name table file.
+#' @param P1exclude Character vector of sample names to exclude.
+#' @param P1groupexclude Character vector of group names to exclude.
+#' @param GlobalGroupX Name of the reference group for contrast.
+#' @param GlobalGroupY Name of the comparison group for contrast.
+#' @param required_observations Minimum number of observations required per group.
+#' @param normalization_option Character string specifying the normalization method.
+#' @param log2_check Logical; whether to apply log2 transformation.
+#' @param remove_0_values Logical; whether to replace zeros with NA.
+#' @param normalize_to_reference Logical; whether to normalise to reference channels.
+#' @param type Character string specifying the input data type.
 #' @export
-#'
-#'
 ScriptApp1DIA <- function(project_name, protein_file, samples_file, P1exclude, P1groupexclude,
                                  GlobalGroupX, GlobalGroupY, required_observations, normalization_option,
                                  log2_check, remove_0_values, normalize_to_reference, type) {

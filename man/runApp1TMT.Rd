@@ -4,7 +4,10 @@
 \alias{runApp1TMT}
 \title{Runs the Shiny TMT App}
 \usage{
-runApp1TMT()
+runApp1TMT(options = list())
+}
+\arguments{
+\item{options}{A list of options passed to \code{shiny::shinyApp()}.}
 }
 \description{
 Runs the Shiny TMT App
