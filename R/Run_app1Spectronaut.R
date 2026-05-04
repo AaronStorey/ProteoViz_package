@@ -10,6 +10,7 @@
 #' @import rhandsontable
 #' @import limma
 #' @import shiny
+#' @import ggplot2
 #' @import cowplot
 #' @importFrom plotly ggplotly layout plotlyOutput renderPlotly
 #' @export
