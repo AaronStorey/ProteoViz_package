@@ -140,10 +140,14 @@ read_samples_report <- function(file_path, type) {
 
 # read_quant_report ------------------------------------------------------------
 # Reads a Spectronaut protein groups report (tab-separated).
-# Selects metadata columns plus all sample-level raw.PG.Quantity columns and
-# assigns a numeric row id.
+# Selects metadata columns plus all sample-level raw.PG.Quantity columns,
+# assigns a numeric row id, then strips the ".raw.PG.Quantity" suffix from
+# sample column names so they equal the bare R.FileName value — the same as
+# the column names produced by read_peptide_spectronaut().  This allows a
+# single sample name table (Data_name = R.FileName) to be shared across both
+# protein and peptide reports from the same Spectronaut run.
 read_quant_report <- function(file_path, type) {
-  readr::read_tsv(file_path, guess_max = 10000) %>%
+  df <- readr::read_tsv(file_path, guess_max = 10000) %>%
     purrr::set_names(gsub(" ", "_", names(.))) %>%
     dplyr::select(
       PG.ProteinGroups, PG.Genes, PG.ProteinDescriptions, PG.UniProtIds,
@@ -151,6 +155,12 @@ read_quant_report <- function(file_path, type) {
     ) %>%
     dplyr::distinct() %>%
     tibble::rownames_to_column("id")
+
+  # "StoreyAJ_20260324_01_DIA_01.raw.PG.Quantity" → "StoreyAJ_20260324_01_DIA_01"
+  quant_cols <- grep("raw\\.PG\\.Quantity", names(df), value = TRUE)
+  names(df)[match(quant_cols, names(df))] <- sub("\\.raw\\.PG\\.Quantity$", "", quant_cols)
+
+  df
 }
 
 
@@ -175,21 +185,21 @@ read_peptide_report <- function(file_path, type) {
 
 # read_peptide_spectronaut -----------------------------------------------------
 # Reads a Spectronaut peptide report (tab-separated).
-# Renames EG.TotalQuantity to Intensity, removes NaN rows, prefixes file names
-# with "raw_", and pivots to wide form so that each sample is a column.
+# Renames EG.TotalQuantity to Intensity, removes NaN rows, and pivots to wide
+# form so that each sample becomes a column named by its bare R.FileName value.
+# Column names therefore match those produced by read_quant_report(), allowing
+# a single sample name table to be shared across protein and peptide reports.
 read_peptide_spectronaut <- function(file_path, type) {
-  readr::read_tsv(file_path, guess_max = 10000) %>%
-    dplyr::rename(Intensity = `EG.TotalQuantity (Settings)`) %>%
-    dplyr::filter(!is.nan(Intensity)) %>%
-    dplyr::mutate(R.FileName = paste0("raw_", R.FileName)) %>%
+  readr::read_tsv(file_path, guess_max = 10000) |>
+    dplyr::rename(Intensity = `EG.TotalQuantity (Settings)`) |>
+    dplyr::filter(!is.nan(Intensity)) |>
     dplyr::select(
       R.FileName, EG.PrecursorId,
       PG.ProteinAccessions, PG.ProteinDescriptions, PG.ProteinNames,
       Intensity
-    ) %>%
-    tidyr::spread(R.FileName, Intensity) %>%
-    dplyr::mutate(id = as.double(rownames(.))) %>%
-    dplyr::select(id, dplyr::everything())
+    ) |>
+    tidyr::pivot_wider(names_from = R.FileName, values_from = Intensity) |>
+    tibble::rowid_to_column("id")
 }
 
 
@@ -215,12 +225,15 @@ read_sample_name_table <- function(sample_file) {
 # file is available to get real Group values from R.Condition.
 make_sample_name_table <- function(protein_df, type) {
   if (type == "Spectronaut") {
-    data_cols <- grep("raw\\.PG\\.Quantity", names(protein_df), value = TRUE)
-
-    if (length(data_cols) == 0L) {
-      # Peptide report: columns named "raw_<FileName>" after pivot
-      data_cols <- grep("^raw_", names(protein_df), value = TRUE)
-    }
+    # Sample columns are everything except the known metadata columns.
+    # Works for both protein reports (read_quant_report strips the
+    # .raw.PG.Quantity suffix) and peptide reports (read_peptide_spectronaut
+    # uses bare R.FileName values), so the resulting Data_name values are
+    # identical across both report types.
+    meta_cols <- c("id", "PG.ProteinGroups", "PG.Genes",
+                   "PG.ProteinDescriptions", "PG.UniProtIds",
+                   "EG.PrecursorId", "PG.ProteinAccessions", "PG.ProteinNames")
+    data_cols <- setdiff(names(protein_df), meta_cols)
 
     return(
       tibble::tibble(
@@ -295,7 +308,7 @@ extract_spectronaut_sample_table <- function(file_path) {
     dplyr::distinct() |>
     dplyr::arrange(R.Condition, R.FileName) |>
     dplyr::mutate(
-      Data_name   = paste0("raw_", R.FileName),
+      Data_name   = R.FileName,
       Sample_name = R.FileName,
       Group       = R.Condition,
       Type        = "Lysate",

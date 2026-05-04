@@ -34,6 +34,12 @@ readQuantReport <- function(filePath, type){
     select(PG.ProteinGroups, PG.Genes, PG.ProteinDescriptions, PG.UniProtIds, contains("raw.PG.Quantity")) %>%
     distinct() %>%
     rownames_to_column("id")
+
+  # Strip ".raw.PG.Quantity" suffix: "Sample01.raw.PG.Quantity" -> "Sample01"
+  # so Data_name values match the bare R.FileName used in peptide reports.
+  quant_cols <- grep("raw\\.PG\\.Quantity", names(x1), value = TRUE)
+  names(x1)[match(quant_cols, names(x1))] <- sub("\\.raw\\.PG\\.Quantity$", "", quant_cols)
+
   return(x1)
 }
 
@@ -71,11 +77,9 @@ readPeptideSpectronaut <- function(filePath, type){
   read_tsv(filePath, guess_max = 10000) %>%
     rename(Intensity = `EG.TotalQuantity (Settings)`) %>%
     filter(!is.nan(Intensity)) %>%
-    mutate(R.FileName = paste0("raw_", R.FileName)) %>%
     select(R.FileName, EG.PrecursorId, PG.ProteinAccessions, PG.ProteinDescriptions, PG.ProteinNames, Intensity) %>%
-    spread(R.FileName, Intensity) %>%
-    mutate(id = as.double(rownames(.))) %>%
-    select(id, everything())
+    tidyr::pivot_wider(names_from = R.FileName, values_from = Intensity) %>%
+    tibble::rowid_to_column("id")
 }
 
 make_observation_required_table <- function(group_table, x1){
@@ -508,11 +512,10 @@ makeSampleNameTable <- function(protein_df, type){
   
   
   if (type == "Spectronaut"){
-    x1 <- grep("raw\\.PG\\.Quantity", names(protein_df), value = TRUE)
-    if (length(x1) == 0L) {
-      # Peptide report: columns named "raw_<FileName>" after pivot
-      x1 <- grep("^raw_", names(protein_df), value = TRUE)
-    }
+    meta_cols <- c("id", "PG.ProteinGroups", "PG.Genes",
+                   "PG.ProteinDescriptions", "PG.UniProtIds",
+                   "EG.PrecursorId", "PG.ProteinAccessions", "PG.ProteinNames")
+    x1 <- setdiff(names(protein_df), meta_cols)
     return(tibble::tibble(Data_name = x1,
                           Sample_name = x1,
                           Type = "Lysate",
