@@ -156,9 +156,12 @@ read_quant_report <- function(file_path, type) {
     dplyr::distinct() %>%
     tibble::rownames_to_column("id")
 
-  # "StoreyAJ_20260324_01_DIA_01.raw.PG.Quantity" → "StoreyAJ_20260324_01_DIA_01"
+  # Normalise to bare R.FileName:
+  #   "[1]_StoreyAJ_20260324_01_DIA_01.raw.PG.Quantity" → "StoreyAJ_20260324_01_DIA_01"
+  # Two steps: strip the trailing ".raw.PG.Quantity", then strip the leading "[N]_" index.
   quant_cols <- grep("raw\\.PG\\.Quantity", names(df), value = TRUE)
-  names(df)[match(quant_cols, names(df))] <- sub("\\.raw\\.PG\\.Quantity$", "", quant_cols)
+  normalised  <- sub("^\\[\\d+\\]_", "", sub("\\.raw\\.PG\\.Quantity$", "", quant_cols))
+  names(df)[match(quant_cols, names(df))] <- normalised
 
   df
 }
@@ -206,9 +209,17 @@ read_peptide_spectronaut <- function(file_path, type) {
 # read_sample_name_table -------------------------------------------------------
 # Reads a sample name table TSV. Forces the first column to be named
 # "Data_name" regardless of what the file header says.
+# Normalises Data_name values to bare R.FileName so that tables created from
+# older Spectronaut exports (where Data_name was the full
+# "[N]_FileName.raw.PG.Quantity" column header) are still compatible with the
+# current readers which strip both the index prefix and the quantity suffix.
 read_sample_name_table <- function(sample_file) {
-  sample_table <- readr::read_tsv(sample_file)
+  sample_table <- readr::read_tsv(sample_file, show_col_types = FALSE)
   colnames(sample_table)[1] <- "Data_name"
+  sample_table[["Data_name"]] <- sub(
+    "^\\[\\d+\\]_", "",
+    sub("\\.raw\\.PG\\.Quantity$", "", sample_table[["Data_name"]])
+  )
   sample_table
 }
 

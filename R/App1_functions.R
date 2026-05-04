@@ -35,10 +35,11 @@ readQuantReport <- function(filePath, type){
     distinct() %>%
     rownames_to_column("id")
 
-  # Strip ".raw.PG.Quantity" suffix: "Sample01.raw.PG.Quantity" -> "Sample01"
-  # so Data_name values match the bare R.FileName used in peptide reports.
+  # Normalise to bare R.FileName:
+  #   "[1]_StoreyAJ_20260324_01_DIA_01.raw.PG.Quantity" → "StoreyAJ_20260324_01_DIA_01"
   quant_cols <- grep("raw\\.PG\\.Quantity", names(x1), value = TRUE)
-  names(x1)[match(quant_cols, names(x1))] <- sub("\\.raw\\.PG\\.Quantity$", "", quant_cols)
+  normalised  <- sub("^\\[\\d+\\]_", "", sub("\\.raw\\.PG\\.Quantity$", "", quant_cols))
+  names(x1)[match(quant_cols, names(x1))] <- normalised
 
   return(x1)
 }
@@ -543,6 +544,13 @@ makeSampleNameTable <- function(protein_df, type){
 readSampleNameTable <- function(sampleFile){
   x1 <- read_tsv(sampleFile)
   colnames(x1)[1] <- "Data_name"
+  # Normalise Data_name: strip "[N]_" prefix and ".raw.PG.Quantity" suffix so
+  # existing curated sample tables match the bare R.FileName column names now
+  # produced by readQuantReport() and readPeptideSpectronaut().
+  x1[["Data_name"]] <- sub(
+    "^\\[\\d+\\]_", "",
+    sub("\\.raw\\.PG\\.Quantity$", "", x1[["Data_name"]])
+  )
   x1
 }
 
