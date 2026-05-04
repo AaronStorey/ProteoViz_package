@@ -207,13 +207,25 @@ read_sample_name_table <- function(sample_file) {
 # Auto-generates a minimal sample name table from the column names of a wide
 # protein/peptide data frame. Useful when no hand-curated sample file exists.
 # Supports Spectronaut and DIA formats.
+#
+# For Spectronaut, tries protein-style columns (raw.PG.Quantity) first, then
+# falls back to peptide-style columns (raw_<FileName>) when the data came from
+# a peptide report pivot.  Group information is NOT available from column names
+# alone; use extract_spectronaut_sample_table() when the original long-format
+# file is available to get real Group values from R.Condition.
 make_sample_name_table <- function(protein_df, type) {
   if (type == "Spectronaut") {
     data_cols <- grep("raw\\.PG\\.Quantity", names(protein_df), value = TRUE)
+
+    if (length(data_cols) == 0L) {
+      # Peptide report: columns named "raw_<FileName>" after pivot
+      data_cols <- grep("^raw_", names(protein_df), value = TRUE)
+    }
+
     return(
       tibble::tibble(
         Data_name   = data_cols,
-        Sample_name = paste0("Sample_", seq_along(data_cols)),
+        Sample_name = data_cols,
         Type        = "Lysate",
         Group       = "A",
         Batch       = 1L,
@@ -234,4 +246,61 @@ make_sample_name_table <- function(protein_df, type) {
     Batch       = 1L,
     Reference   = "N"
   )
+}
+
+
+# extract_spectronaut_sample_table ---------------------------------------------
+# Builds a sample name table directly from the embedded metadata in a
+# long-format Spectronaut report (protein group report OR peptide report).
+# Reads only the R.Condition and R.FileName columns, so it is fast even on
+# large files.
+#
+# The resulting Data_name values ("raw_<FileName>") match the column names
+# produced by read_peptide_spectronaut() after it pivots the data wide,
+# allowing the sample table to be joined correctly without any manual editing.
+# R.Condition is mapped to Group, preserving real group labels rather than the
+# placeholder "A" that make_sample_name_table() assigns.
+#
+# Rows are ordered by Group then FileName so the handsontable displays in a
+# logical order.
+#
+#' @title Build a sample table from a long-format Spectronaut report
+#'
+#' @description Reads only the \code{R.Condition} and \code{R.FileName}
+#'   metadata columns from a long-format Spectronaut protein or peptide report
+#'   and returns a sample name table ready for use in the Shiny apps or CLI
+#'   workflows. The \code{Data_name} values are prefixed with \code{"raw_"} to
+#'   match the column names produced when the same report is loaded with
+#'   \code{read_peptide_spectronaut()}.
+#'
+#' @param file_path Character. Path to a long-format Spectronaut TSV report
+#'   that contains \code{R.Condition} and \code{R.FileName} columns.
+#'
+#' @return A tibble with columns \code{Data_name}, \code{Sample_name},
+#'   \code{Type}, \code{Group}, \code{Batch}, \code{Reference}. One row per
+#'   unique sample. \code{Group} is populated from \code{R.Condition}.
+#'   \code{Sample_name} is set to the raw file base name (without "raw_"
+#'   prefix) for readability. \code{Type}, \code{Batch}, and \code{Reference}
+#'   default to \code{"Lysate"}, \code{1}, and \code{"N"} respectively and can
+#'   be edited in the Shiny handsontable before downstream analysis.
+#'
+#' @export
+extract_spectronaut_sample_table <- function(file_path) {
+  readr::read_tsv(
+    file_path,
+    col_select  = c("R.Condition", "R.FileName"),
+    guess_max   = 10000,
+    show_col_types = FALSE
+  ) |>
+    dplyr::distinct() |>
+    dplyr::arrange(R.Condition, R.FileName) |>
+    dplyr::mutate(
+      Data_name   = paste0("raw_", R.FileName),
+      Sample_name = R.FileName,
+      Group       = R.Condition,
+      Type        = "Lysate",
+      Batch       = 1L,
+      Reference   = "N"
+    ) |>
+    dplyr::select(Data_name, Sample_name, Type, Group, Batch, Reference)
 }

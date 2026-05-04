@@ -4,7 +4,6 @@
 # Import ------------------------------------------------------------------
 #General
 
-
 readSamplesReport <- function(filePath, type){
   if (type == "DIA") {
     first_read <- readLines(filePath)
@@ -510,8 +509,12 @@ makeSampleNameTable <- function(protein_df, type){
   
   if (type == "Spectronaut"){
     x1 <- grep("raw\\.PG\\.Quantity", names(protein_df), value = TRUE)
+    if (length(x1) == 0L) {
+      # Peptide report: columns named "raw_<FileName>" after pivot
+      x1 <- grep("^raw_", names(protein_df), value = TRUE)
+    }
     return(tibble::tibble(Data_name = x1,
-                          Sample_name = paste0("Sample_", seq_along(x1)),
+                          Sample_name = x1,
                           Type = "Lysate",
                           Group = "A",
                           Batch = 1,

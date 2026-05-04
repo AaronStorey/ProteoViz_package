@@ -313,19 +313,28 @@ runApp1Spectronaut <- function(options = list()){
     # Creates handsontable where metaData1() will be edited
     
     sampleNameTable <- reactive({
-      
+
       if (isTruthy(input$sampleFile)) {
+        # User-supplied sample file: highest priority
         readSampleNameTable(input$sampleFile$datapath) %>%
           rhandsontable() %>%
           hot_col("Data_name", readOnly = T)
+      } else if (isTruthy(input$peptideFile) && !isTruthy(input$proteinFile)) {
+        # Peptide-only upload: extract Group/FileName metadata directly from the
+        # long-format report before the pivot loses R.Condition information.
+        extract_spectronaut_sample_table(input$peptideFile$datapath) %>%
+          as.data.frame() %>%
+          rhandsontable() %>%
+          hot_col("Data_name", readOnly = T)
       } else if(isTruthy(protein_df())){
+        # Protein file (or peptide loaded as protein fallback): derive from
+        # column names. Group defaults to "A" — edit in the table if needed.
         makeSampleNameTable(protein_df(), type = type) %>%
           as.data.frame() %>%
           rhandsontable() %>%
           hot_col("Data_name", readOnly = T)
       }
-      
-      
+
     })
     
     # Outputs the Rhandsontable
