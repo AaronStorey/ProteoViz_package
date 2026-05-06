@@ -2,7 +2,6 @@
 
 
 ###########Import functions
-
 #General
 makeDesignTable <- function(sampleTable){
   df1 <- sampleTable %>%
