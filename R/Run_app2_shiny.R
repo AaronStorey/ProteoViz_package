@@ -289,7 +289,7 @@ runApp2 <- function(options = list()){
                  textInput("pv1pvalue", "p-value cutoff:",
                            value = 1)),
           column(2,
-                 actionButton("pv1button", "Update volcano plot"))
+                 checkboxInput("pv1useAdjP", "Use adjusted p.values", value = TRUE))
 
         ),
         fluidRow(
@@ -297,6 +297,53 @@ runApp2 <- function(options = list()){
                  plotlyOutput("ProteinVolcanoplot"),
                  selectInput("ProteinSearch", label = "Highlight a protein:",
                              choices = character(0), multiple = TRUE)
+          ),
+          column(6,
+                 box(
+                   width = 12,
+                   title = "GO Enrichment (selected proteins)",
+                   checkboxInput("goEnrichCheck",
+                                 "Run GO enrichment on selected proteins",
+                                 value = FALSE),
+                   fluidRow(
+                     column(4,
+                            selectInput("goOnt", "Ontology",
+                                        choices  = c("Biological Process" = "BP",
+                                                     "Molecular Function" = "MF",
+                                                     "Cellular Component" = "CC",
+                                                     "All"               = "ALL"),
+                                        selected = "BP")),
+                     column(4,
+                            selectInput("goScoreType", "Score type",
+                                        choices  = c("Standard" = "std",
+                                                     "Positive" = "pos",
+                                                     "Negative" = "neg"),
+                                        selected = "std")),
+                     column(4,
+                            textInput("goPvalueCutoff", "p-value cutoff", value = "0.05"))
+                   ),
+                   fluidRow(
+                     column(4,
+                            textInput("goShowCategory", "Categories to show", value = "20")),
+                     column(4,
+                            selectInput("goGeneSet", "Heatmap gene set",
+                                        choices  = c("Core enrichment" = "core",
+                                                     "Full gene set"   = "full"),
+                                        selected = "core"))
+                   ),
+                   tabBox(
+                     id    = "goPlotTabs",
+                     width = 12,
+                     tabPanel("Dot plot",
+                              plotlyOutput("goEnrichPlot", height = "500px")),
+                     tabPanel("Network (cnetplot)",
+                              plotOutput("goCnetplot", height = "600px")),
+                     tabPanel("Heat plot",
+                              plotOutput("goHeatplot", height = "500px")),
+                     tabPanel("GSEA plot",
+                              plotOutput("goGseaplot", height = "500px"))
+                   )
+                 )
           ))
       )
     )
@@ -957,7 +1004,10 @@ runApp2 <- function(options = list()){
                         choices = x1)
     })
 
-    excluded_groups <- reactive({ character(0) })
+    excluded_groups <- reactive({
+      inp <- input$proteinHeatGroupExclude
+      if (is.null(inp)) character(0) else inp
+    })
 
     output$ProteinVolcanoplot <- renderPlotly({
       req(combined_data())
@@ -965,44 +1015,62 @@ runApp2 <- function(options = list()){
 
       input$pv1button
       volcanoComparison <- isolate(input$ProteinVolcanoComparison)
-      FCcutoff <- isolate(as.numeric(input$pv1FC))
-      Pcutoff <- isolate(as.numeric(input$pv1pvalue))
+      FCcutoff  <- isolate(as.numeric(input$pv1FC))
+      Pcutoff   <- isolate(as.numeric(input$pv1pvalue))
+      useAdjP   <- isTRUE(input$pv1useAdjP)
+
+      # Join protein metadata so hover text can show description/gene/uniprot.
+      # Match on protein (character rowname from matrix) == id (from metadata).
+      plot_data <- combined_data() |>
+        dplyr::filter(Comparison %in% volcanoComparison)
+
+      if (isTruthy(metadata())) {
+        meta_slim <- metadata() |>
+          dplyr::mutate(protein = as.character(id)) |>
+          dplyr::select(protein,
+                        dplyr::any_of(c("PG.ProteinDescriptions",
+                                        "PG.Genes",
+                                        "PG.UniProtIds")))
+        plot_data <- dplyr::left_join(plot_data, meta_slim, by = "protein")
+      }
 
       plot_volcano(
-        combined_data() |> dplyr::filter(Comparison %in% volcanoComparison),
-        fc_threshold = FCcutoff,
-        p_threshold  = Pcutoff,
-        label_col    = "protein"
+        plot_data,
+        fc_threshold  = FCcutoff,
+        p_threshold   = Pcutoff,
+        use_adj_p     = useAdjP,
+        plotly_source = "proteinVolcano",
+        key_col       = "protein"
       )
     })
 
     selected_data <- reactive({
       req(quant_data())
-      d <- event_data("plotly_selected", source = "proteinVolcano")
+      d <- plotly::event_data("plotly_selected", source = "proteinVolcano")
       req(!is.null(d))
 
       quant_data() %>%
-        filter(id %in% d$key)
+        filter(as.character(id) %in% d$key)
     })
-    
+
     protein_click_data <- reactive({
       req(quant_data())
-      d <- event_data("plotly_click", source = "proteinVolcano")
+      d <- plotly::event_data("plotly_click", source = "proteinVolcano")
       req(!is.null(d))
-      
+
       quant_data() %>%
-        filter(id %in% d$key)
+        filter(as.character(id) %in% d$key)
     })
-    
+
     peptide_click_data <- reactive({
       req(quant_data())
       req(metadata())
       req(peptide_metadata())
-      d <- event_data("plotly_click", source = "proteinVolcano")
+      d <- plotly::event_data("plotly_click", source = "proteinVolcano")
       req(!is.null(d))
-      
+
       protein_id <- metadata() %>%
-        filter(id %in% d$key)
+        filter(as.character(id) %in% d$key)
       
       #If DIA peptide metadata
       if("Protein_Accessions" %in% names(peptide_metadata())){
@@ -1051,27 +1119,36 @@ runApp2 <- function(options = list()){
     output$proteinHeat <- renderPlotly({
       req(input$phcheck)
       req(quant_data())
-      req(metadata())
-      req(selected_data())
+      req(sample_table_df())
+
+      # GO dotplot click takes priority; fall back to volcano selection
+      heat_ids <- if (isTruthy(go_click_proteins()) && nrow(go_click_proteins()) > 0) {
+        go_click_proteins()$id
+      } else {
+        req(selected_data())
+        selected_data()$id
+      }
 
       quant_long <- quant_data() |>
         tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
 
       plot_protein_heatmap(
         quant_long,
-        metadata(),
-        proteins       = selected_data()$id,
+        sample_table_df(),
+        proteins       = heat_ids,
+        protein_anno   = metadata(),
         scale_rows     = input$phscalecheck,
         exclude_groups = excluded_groups()
       )
     })
-    
+
     output$peptideHeat <- renderPlotly({
       req(input$phcheck)
       req(peptide_click_table())
       req(peptide_metadata())
       req(protein_click_data())
       req(metadata())
+      req(sample_table_df())
 
       peptide_long <- peptide_click_table() |>
         tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
@@ -1082,18 +1159,19 @@ runApp2 <- function(options = list()){
 
       plot_peptide_heatmap(
         peptide_long,
-        metadata(),
+        sample_table_df(),
         proteins         = protein_names,
         peptide_metadata = peptide_metadata()
       )
     })
-    
+
     downloadablePlotServer("peptideDLPlot", reactive({
       req(input$phcheck)
       req(peptide_click_table())
       req(peptide_metadata())
       req(protein_click_data())
       req(metadata())
+      req(sample_table_df())
 
       peptide_long <- peptide_click_table() |>
         tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
@@ -1104,17 +1182,17 @@ runApp2 <- function(options = list()){
 
       plot_peptide_heatmap(
         peptide_long,
-        metadata(),
+        sample_table_df(),
         proteins         = protein_names,
         peptide_metadata = peptide_metadata()
       )
     }))
-    
-    
+
+
     downloadablePlotServer("proteinDLPlot", reactive({
       req(input$phcheck)
       req(quant_data())
-      req(metadata())
+      req(sample_table_df())
       req(selected_data())
 
       quant_long <- quant_data() |>
@@ -1122,8 +1200,9 @@ runApp2 <- function(options = list()){
 
       plot_protein_heatmap(
         quant_long,
-        metadata(),
+        sample_table_df(),
         proteins       = selected_data()$id,
+        protein_anno   = metadata(),
         scale_rows     = input$phscalecheck,
         exclude_groups = excluded_groups()
       )
@@ -1157,6 +1236,95 @@ runApp2 <- function(options = list()){
     
     
 
+
+    # GO Enrichment -----------------------------------------------------------
+
+    go_result <- reactive({
+      req(input$goEnrichCheck)
+      req(quant_data())
+      req(metadata())
+      req(selected_data())
+
+      run_go_enrichment(
+        quant_data(), metadata(), selected_data(),
+        ont           = input$goOnt,
+        score_type    = input$goScoreType,
+        pvalue_cutoff = as.numeric(input$goPvalueCutoff)
+      )
+    })
+
+    # Unpack ego and gene_list from go_result(); return NULL if not yet computed
+    go_ego <- reactive({
+      r <- tryCatch(go_result(), error = function(e) NULL)
+      if (is.null(r)) NULL else r$ego
+    })
+
+    go_gene_list <- reactive({
+      r <- tryCatch(go_result(), error = function(e) NULL)
+      if (is.null(r)) NULL else r$gene_list
+    })
+
+    go_show_category <- reactive({
+      n <- suppressWarnings(as.integer(input$goShowCategory))
+      if (is.na(n) || n < 1) 20L else n
+    })
+
+    output$goEnrichPlot <- renderPlotly({
+      plot_go_dotplot(go_ego(),
+                      show_category = go_show_category(),
+                      plotly_source = "goDotplot")
+    })
+
+    output$goCnetplot <- renderPlot({
+      plot_go_cnetplot(go_ego(), go_gene_list(),
+                       show_category = go_show_category())
+    })
+
+    output$goHeatplot <- renderPlot({
+      plot_go_heatplot(go_ego(), go_gene_list(),
+                       show_category = go_show_category())
+    })
+
+    output$goGseaplot <- renderPlot({
+      d     <- plotly::event_data("plotly_click", source = "goDotplot")
+      go_id <- if (!is.null(d)) d$key else NULL
+      plot_go_gseaplot(go_ego(), go_id)
+    })
+
+    go_click_proteins <- reactive({
+      result <- tryCatch(go_result(), error = function(e) NULL)
+      if (is.null(result)) return(NULL)
+      ego <- result$ego
+
+      d <- plotly::event_data("plotly_click", source = "goDotplot")
+      if (is.null(d)) return(NULL)
+
+      req(quant_data())
+      req(metadata())
+
+      go_id    <- d$key
+      gene_col <- intersect(c("PG.Genes", "Gene_name"), names(metadata()))[1]
+
+      gene_symbols <- if (input$goGeneSet == "core") {
+        ego@result |>
+          dplyr::filter(ID == go_id) |>
+          dplyr::pull(core_enrichment) |>
+          stringr::str_split("/") |>
+          unlist()
+      } else {
+        ego@geneSets[[go_id]]
+      }
+
+      protein_ids <- metadata() |>
+        dplyr::mutate(gene = stringr::str_trim(
+          stringr::str_extract(!!rlang::sym(gene_col), "^[^;]+")
+        )) |>
+        dplyr::filter(gene %in% gene_symbols) |>
+        dplyr::pull(id)
+
+      quant_data() |>
+        dplyr::filter(id %in% protein_ids)
+    })
 
     # -------------------------------------------------------------------------
 

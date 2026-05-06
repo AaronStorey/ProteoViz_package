@@ -316,20 +316,36 @@ plot_missing_values <- function(data, metadata) {
 #' @title Volcano plot of differential expression results
 #'
 #' @description Produces an interactive \code{plotly} scatter plot with
-#'   \eqn{-\log_{10}(\text{adjusted p-value})} on the y-axis and
-#'   \eqn{\log_2} fold change on the x-axis. Points are coloured by
-#'   significance category: \emph{Up}, \emph{Down}, or \emph{NS}. Dashed
-#'   threshold lines are drawn as reference guides.
+#'   \eqn{-\log_{10}(\text{p-value})} on the y-axis and \eqn{\log_2} fold
+#'   change on the x-axis. All points are drawn in black. Dashed threshold
+#'   lines are drawn as reference guides. Rich hover labels (black background,
+#'   white text) display protein description, gene name, UniProt ID, logFC,
+#'   p.value, and adj.P.Val when those columns are present in \code{results}.
+#'
+#'   Setting \code{plotly_source} enables \code{plotly::event_data()} so that
+#'   downstream Shiny outputs can react to clicks and drag-selections on the
+#'   plot. The \code{key_col} value is returned in \code{event_data()$key}.
 #'
 #' @param results A tibble (one row per protein) with at minimum the columns
-#'   \code{logFC}, \code{adj.P.Val}, and the column named by \code{label_col}.
-#'   Typically one element of the list returned by \code{run_limma_protein()}.
-#' @param fc_threshold Numeric. Absolute log2 fold-change threshold. Defaults
-#'   to \code{1}.
-#' @param p_threshold Numeric. Adjusted p-value threshold. Defaults to
-#'   \code{0.05}.
-#' @param label_col Character. Column in \code{results} to use as hover-text
-#'   label. Defaults to \code{"protein"}.
+#'   \code{logFC}, \code{P.Value}, and \code{adj.P.Val}. Optional metadata
+#'   columns \code{PG.ProteinDescriptions}, \code{PG.Genes}, and
+#'   \code{PG.UniProtIds} are included in the hover label when present.
+#'   Typically the output of \code{combine_limma_results()}, optionally
+#'   left-joined with a protein metadata table before calling this function.
+#' @param fc_threshold Numeric. Absolute log2 fold-change threshold for the
+#'   vertical dashed guide lines. Defaults to \code{1}.
+#' @param p_threshold Numeric. P-value threshold for the horizontal dashed
+#'   guide line. Defaults to \code{0.05}.
+#' @param use_adj_p Logical. If \code{TRUE} (default), the y-axis shows
+#'   \eqn{-\log_{10}(\text{adj.P.Val})}. If \code{FALSE}, raw \code{P.Value}
+#'   is used instead.
+#' @param plotly_source Character. Passed as the \code{source} argument to
+#'   \code{plotly::plot_ly()}, enabling \code{plotly::event_data(source = ...)}
+#'   in Shiny. Defaults to \code{"proteinVolcano"}.
+#' @param key_col Character. Column in \code{results} whose values are used as
+#'   the plotly \code{key} — the identifier returned by
+#'   \code{event_data()$key} on click or selection. Defaults to
+#'   \code{"protein"}.
 #'
 #' @return A \code{plotly} object.
 #'
@@ -339,57 +355,75 @@ plot_missing_values <- function(data, metadata) {
 #'   results      = limma_results[["A - B"]],
 #'   fc_threshold = 1,
 #'   p_threshold  = 0.05,
-#'   label_col    = "Gene_name"
+#'   use_adj_p    = TRUE
 #' )
 #' pv
 #' }
 #'
 #' @export
 plot_volcano <- function(results,
-                         fc_threshold = 1,
-                         p_threshold  = 0.05,
-                         label_col    = "protein") {
+                         fc_threshold  = 1,
+                         p_threshold   = 0.05,
+                         use_adj_p     = TRUE,
+                         plotly_source = "proteinVolcano",
+                         key_col       = "protein") {
+
+  p_col   <- if (use_adj_p) "adj.P.Val" else "P.Value"
+  y_label <- if (use_adj_p) "-log10 adj.p.value" else "-log10 p.value"
 
   plot_data <- results |>
-    dplyr::mutate(
-      neg_log10_p  = -log10(adj.P.Val),
-      significance = dplyr::case_when(
-        logFC >  fc_threshold & adj.P.Val < p_threshold ~ "Up",
-        logFC < -fc_threshold & adj.P.Val < p_threshold ~ "Down",
-        TRUE                                             ~ "NS"
+    dplyr::mutate(neg_log10_p = -log10(.data[[p_col]]))
+
+  # Build per-row hover text from whatever metadata columns are present
+  hover_lines <- list(
+    paste0("Log2 fold change: ", round(plot_data$logFC, 3)),
+    paste0("p.value: ",          signif(plot_data$P.Value,   3)),
+    paste0("adj.p.value: ",      signif(plot_data$adj.P.Val, 3))
+  )
+  if ("PG.UniProtIds" %in% names(plot_data))
+    hover_lines <- c(list(paste0("Uniprot ID: ", plot_data$PG.UniProtIds)), hover_lines)
+  if ("PG.Genes" %in% names(plot_data))
+    hover_lines <- c(list(paste0("Gene name: ", plot_data$PG.Genes)), hover_lines)
+  if ("PG.ProteinDescriptions" %in% names(plot_data))
+    hover_lines <- c(list(paste0("Protein: ", plot_data$PG.ProteinDescriptions)), hover_lines)
+
+  plot_data$hover_text <- do.call(paste, c(hover_lines, sep = "<br>"))
+
+  plotly::plot_ly(
+    data         = plot_data,
+    x            = ~logFC,
+    y            = ~neg_log10_p,
+    key          = plot_data[[key_col]],
+    text         = ~hover_text,
+    type         = "scatter",
+    mode         = "markers",
+    marker       = list(color = "black", size = 5, opacity = 0.7),
+    source       = plotly_source,
+    hovertemplate = "%{text}<extra></extra>"
+  ) |>
+    plotly::layout(
+      dragmode   = "select",
+      xaxis      = list(title = "log2 FC"),
+      yaxis      = list(title = y_label),
+      hoverlabel = list(
+        bgcolor  = "black",
+        font     = list(color = "white", size = 12)
       ),
-      significance = factor(significance, levels = c("Up", "Down", "NS"))
+      shapes = list(
+        list(type = "line",
+             x0 = fc_threshold,  x1 = fc_threshold,
+             y0 = 0, y1 = 1, yref = "paper",
+             line = list(color = "grey50", width = 1, dash = "dash")),
+        list(type = "line",
+             x0 = -fc_threshold, x1 = -fc_threshold,
+             y0 = 0, y1 = 1, yref = "paper",
+             line = list(color = "grey50", width = 1, dash = "dash")),
+        list(type = "line",
+             x0 = 0, x1 = 1, xref = "paper",
+             y0 = -log10(p_threshold), y1 = -log10(p_threshold),
+             line = list(color = "grey50", width = 1, dash = "dash"))
+      )
     )
-
-  sig_colours <- c(Up = "#E64B35", Down = "#4DBBD5", NS = "grey70")
-
-  p <- ggplot2::ggplot(
-    plot_data,
-    ggplot2::aes(
-      x      = logFC,
-      y      = neg_log10_p,
-      colour = significance,
-      text   = .data[[label_col]]
-    )
-  ) +
-    ggplot2::geom_point(size = 1.5, alpha = 0.7) +
-    ggplot2::geom_vline(
-      xintercept = c(-fc_threshold, fc_threshold),
-      linetype   = "dashed", colour = "grey50", linewidth = 0.4
-    ) +
-    ggplot2::geom_hline(
-      yintercept = -log10(p_threshold),
-      linetype   = "dashed", colour = "grey50", linewidth = 0.4
-    ) +
-    ggplot2::scale_colour_manual(values = sig_colours, name = NULL) +
-    ggplot2::labs(
-      x = expression(log[2] ~ "Fold Change"),
-      y = expression(-log[10] ~ "Adjusted p-value")
-    ) +
-    ggplot2::theme_bw(base_size = 12) +
-    ggplot2::theme(legend.position = "right")
-
-  plotly::ggplotly(p, tooltip = c("text", "x", "y"))
 }
 
 
@@ -408,7 +442,12 @@ plot_volcano <- function(results,
 #'   and \code{Intensity}.
 #' @param metadata A tibble with columns \code{Sample_name} and \code{Group}.
 #' @param proteins A character vector of \code{id} values to include.
-#' @param scale_rows Logical. If \code{TRUE} (default), rows are z-score scaled.
+#' @param protein_anno Optional tibble with columns \code{id}, \code{Description},
+#'   and \code{Gene_name} used to label heatmap rows. Up to 200 characters of
+#'   \code{Description} are used, followed by the \code{Gene_name}.
+#' @param scale_rows Logical. If \code{TRUE} (default), rows are z-score scaled
+#'   and an RdBu diverging palette is used; if \code{FALSE} a viridis palette
+#'   is applied to raw intensities.
 #' @param exclude_groups A character vector of group labels to exclude from the
 #'   heatmap. Defaults to \code{NULL}.
 #'
@@ -421,9 +460,10 @@ plot_volcano <- function(results,
 #'   dplyr::pull(protein)
 #'
 #' ph <- plot_protein_heatmap(
-#'   data       = normalised_long,
-#'   metadata   = sample_table,
-#'   proteins   = sig_proteins
+#'   data         = normalised_long,
+#'   metadata     = sample_table,
+#'   proteins     = sig_proteins,
+#'   protein_anno = protein_metadata
 #' )
 #' ph
 #' }
@@ -432,6 +472,7 @@ plot_volcano <- function(results,
 plot_protein_heatmap <- function(data,
                                  metadata,
                                  proteins,
+                                 protein_anno   = NULL,
                                  scale_rows     = TRUE,
                                  exclude_groups = NULL) {
 
@@ -453,6 +494,40 @@ plot_protein_heatmap <- function(data,
 
   mat <- mat[rowSums(!is.na(mat)) > 0, , drop = FALSE]
 
+  if (!is.null(protein_anno) && nrow(mat) > 0) {
+    id_vec   <- rownames(mat)
+    anno_sub <- protein_anno |>
+      dplyr::mutate(id = as.character(id)) |>
+      dplyr::filter(id %in% id_vec) |>
+      dplyr::select(id,
+                    dplyr::any_of(c("PG.ProteinDescriptions", "Description")),
+                    dplyr::any_of(c("Gene_name", "PG.Genes"))) |>
+      dplyr::distinct(id, .keep_all = TRUE)
+
+    desc_col <- intersect(c("PG.ProteinDescriptions", "Description"), names(anno_sub))[1]
+    gene_col <- intersect(c("Gene_name", "PG.Genes"),                 names(anno_sub))[1]
+
+    label_map <- if (!is.na(desc_col) && !is.na(gene_col)) {
+      stats::setNames(
+        paste0(substr(anno_sub[[desc_col]], 1, 75), " | ",
+               substr(anno_sub[[gene_col]], 1, 15)),
+        anno_sub$id
+      )
+    } else if (!is.na(gene_col)) {
+      stats::setNames(substr(anno_sub[[gene_col]], 1, 15), anno_sub$id)
+    } else {
+      stats::setNames(anno_sub$id, anno_sub$id)
+    }
+
+    rownames(mat) <- ifelse(
+      id_vec %in% names(label_map), label_map[id_vec], id_vec
+    )
+  }
+
+  # Order columns by design table row order, then build annotation in that order
+  design_col_order <- metadata$Sample_name[metadata$Sample_name %in% colnames(mat)]
+  mat <- mat[, design_col_order, drop = FALSE]
+
   col_annotation <- metadata |>
     dplyr::filter(Sample_name %in% colnames(mat)) |>
     dplyr::select(Sample_name, Group) |>
@@ -460,18 +535,52 @@ plot_protein_heatmap <- function(data,
     tibble::column_to_rownames("Sample_name")
   col_annotation <- col_annotation[colnames(mat), , drop = FALSE]
 
-  heatmaply::heatmaply(
-    mat,
-    scale           = if (scale_rows) "row" else "none",
-    col_side_colors = col_annotation,
-    showticklabels  = c(TRUE, FALSE),
-    xlab            = "Sample",
-    ylab            = "Protein",
-    main            = "",
-    plot_method     = "plotly",
-    colors          = grDevices::colorRampPalette(
-      rev(RColorBrewer::brewer.pal(11, "RdBu"))
-    )(256)
+  make_heatmap <- function(Rowv = TRUE, Colv = FALSE, main = "") {
+    if (scale_rows) {
+      heatmaply::heatmaply(
+        mat,
+        scale                   = "row",
+        col_side_colors         = col_annotation,
+        showticklabels          = c(TRUE, TRUE),
+        margins                 = c(60, 300, 40, 20),
+        main                    = main,
+        plot_method             = "ggplot",
+        scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(
+          low  = "blue",
+          mid  = "white",
+          high = "red"
+        ),
+        Rowv                    = Rowv,
+        Colv                    = Colv
+      )
+    } else {
+      heatmaply::heatmaply(
+        mat,
+        scale           = "none",
+        col_side_colors = col_annotation,
+        showticklabels  = c(TRUE, TRUE),
+        margins         = c(60, 300, 40, 20),
+        main            = main,
+        plot_method     = "plotly",
+        colors          = viridisLite::viridis(256),
+        Rowv            = Rowv,
+        Colv            = Colv
+      )
+    }
+  }
+
+  tryCatch(
+    make_heatmap(),
+    error = function(e) {
+      if (grepl("NA/NaN/Inf", conditionMessage(e), fixed = TRUE)) {
+        make_heatmap(
+          Rowv = FALSE, Colv = FALSE,
+          main = "(clustering disabled — too many missing values)"
+        )
+      } else {
+        stop(e)
+      }
+    }
   )
 }
 

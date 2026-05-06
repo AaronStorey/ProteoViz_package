@@ -38,7 +38,12 @@ Imports:
     stringr,
     grid,
     grDevices,
-    stats
+    stats,
+    viridisLite,
+    clusterProfiler,
+    enrichplot,
+    org.Hs.eg.db,
+    BiocParallel
 Suggests:
     devtools
 RoxygenNote: 7.3.3
