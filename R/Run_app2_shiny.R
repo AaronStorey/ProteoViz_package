@@ -212,7 +212,7 @@ runApp2 <- function(options = list()){
     fluidRow(
       box(
         width = 12,
-        title = "test_summary_plot",
+        title = "Contrast results",
         plotOutput("test_summary_plot")
       )
     )
@@ -289,7 +289,8 @@ runApp2 <- function(options = list()){
                  textInput("pv1pvalue", "p-value cutoff:",
                            value = 1)),
           column(2,
-                 checkboxInput("pv1useAdjP", "Use adjusted p.values", value = TRUE))
+                 checkboxInput("pv1useAdjP", "Use adjusted p.values", value = TRUE),
+                 checkboxInput("pv1colorByPeptides", "Color points by # peptides", value = FALSE))
 
         ),
         fluidRow(
@@ -907,13 +908,28 @@ runApp2 <- function(options = list()){
 
       df <- combined_data()
 
-      df %>%
+      pc <- tryCatch(peptide_counts(), error = function(e) NULL)
+      if (!is.null(pc)) {
+        df <- dplyr::left_join(df, pc, by = "protein")
+        df$n_peptides_capped <- pmin(df$n_peptides, 5L)
+      }
+
+      p <- df %>%
         ggplot(aes(x = logFC, y = -log10(adj.P.Val))) +
-        geom_point() +
         geom_hline(yintercept = -log10(.05), linetype = "dotted") +
         geom_vline(xintercept = -log2(1.5), linetype = "dotted") +
         geom_vline(xintercept = log2(1.5), linetype = "dotted") +
         facet_wrap(~Comparison, scales = "free_y")
+
+      if (!is.null(pc) && "n_peptides_capped" %in% names(df)) {
+        p <- p +
+          geom_point(aes(color = n_peptides_capped)) +
+          scale_color_viridis_c(name = "# Peptides", limits = c(1, 5), oob = scales::squish, direction = -1)
+      } else {
+        p <- p + geom_point()
+      }
+
+      p
     })
 
     output$upset_plot <- renderPlot({
@@ -1009,6 +1025,34 @@ runApp2 <- function(options = list()){
       if (is.null(inp)) character(0) else inp
     })
 
+    # Count distinct peptide IDs per protein; handles both Spectronaut and DIA
+    peptide_counts <- reactive({
+      req(peptide_metadata())
+      req(metadata())
+
+      pm <- peptide_metadata()
+
+      if ("PG.ProteinAccessions" %in% names(pm)) {
+        counts <- pm |>
+          dplyr::group_by(PG.ProteinAccessions) |>
+          dplyr::summarise(n_peptides = dplyr::n_distinct(id), .groups = "drop")
+        metadata() |>
+          dplyr::select(id, PG.ProteinGroups) |>
+          dplyr::left_join(counts, by = c("PG.ProteinGroups" = "PG.ProteinAccessions")) |>
+          dplyr::transmute(protein = as.character(id), n_peptides)
+      } else if ("Protein_Accessions" %in% names(pm)) {
+        counts <- pm |>
+          dplyr::group_by(Protein_Accessions) |>
+          dplyr::summarise(n_peptides = dplyr::n_distinct(id), .groups = "drop")
+        metadata() |>
+          dplyr::select(id, Accession_Number) |>
+          dplyr::left_join(counts, by = c("Accession_Number" = "Protein_Accessions")) |>
+          dplyr::transmute(protein = as.character(id), n_peptides)
+      } else {
+        NULL
+      }
+    })
+
     output$ProteinVolcanoplot <- renderPlotly({
       req(combined_data())
       req(input$ProteinVolcanoComparison)
@@ -1019,8 +1063,6 @@ runApp2 <- function(options = list()){
       Pcutoff   <- isolate(as.numeric(input$pv1pvalue))
       useAdjP   <- isTRUE(input$pv1useAdjP)
 
-      # Join protein metadata so hover text can show description/gene/uniprot.
-      # Match on protein (character rowname from matrix) == id (from metadata).
       plot_data <- combined_data() |>
         dplyr::filter(Comparison %in% volcanoComparison)
 
@@ -1034,13 +1076,25 @@ runApp2 <- function(options = list()){
         plot_data <- dplyr::left_join(plot_data, meta_slim, by = "protein")
       }
 
+      # Optionally join peptide counts for continuous point coloring
+      color_var <- NULL
+      if (isTRUE(input$pv1colorByPeptides)) {
+        pc <- tryCatch(peptide_counts(), error = function(e) NULL)
+        if (!is.null(pc)) {
+          plot_data <- dplyr::left_join(plot_data, pc, by = "protein")
+          color_var <- "n_peptides"
+        }
+      }
+
       plot_volcano(
         plot_data,
         fc_threshold  = FCcutoff,
         p_threshold   = Pcutoff,
         use_adj_p     = useAdjP,
         plotly_source = "proteinVolcano",
-        key_col       = "protein"
+        key_col       = "protein",
+        color_var     = color_var,
+        color_label   = "# Peptides"
       )
     })
 
@@ -1161,7 +1215,8 @@ runApp2 <- function(options = list()){
         peptide_long,
         sample_table_df(),
         proteins         = protein_names,
-        peptide_metadata = peptide_metadata()
+        peptide_metadata = peptide_metadata(),
+        scale_rows       = input$phscalecheck
       )
     })
 
@@ -1184,7 +1239,8 @@ runApp2 <- function(options = list()){
         peptide_long,
         sample_table_df(),
         proteins         = protein_names,
-        peptide_metadata = peptide_metadata()
+        peptide_metadata = peptide_metadata(),
+        scale_rows       = input$phscalecheck
       )
     }))
 

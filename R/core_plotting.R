@@ -346,6 +346,11 @@ plot_missing_values <- function(data, metadata) {
 #'   the plotly \code{key} — the identifier returned by
 #'   \code{event_data()$key} on click or selection. Defaults to
 #'   \code{"protein"}.
+#' @param color_var Character or \code{NULL}. Name of a numeric column in
+#'   \code{results} to use for continuous point colouring (Viridis scale with
+#'   a colour bar). When \code{NULL} (default) points are drawn in solid black.
+#' @param color_label Character. Label shown on the colour bar. Defaults to
+#'   \code{color_var}.
 #'
 #' @return A \code{plotly} object.
 #'
@@ -366,7 +371,9 @@ plot_volcano <- function(results,
                          p_threshold   = 0.05,
                          use_adj_p     = TRUE,
                          plotly_source = "proteinVolcano",
-                         key_col       = "protein") {
+                         key_col       = "protein",
+                         color_var     = NULL,
+                         color_label   = color_var) {
 
   p_col   <- if (use_adj_p) "adj.P.Val" else "P.Value"
   y_label <- if (use_adj_p) "-log10 adj.p.value" else "-log10 p.value"
@@ -380,6 +387,9 @@ plot_volcano <- function(results,
     paste0("p.value: ",          signif(plot_data$P.Value,   3)),
     paste0("adj.p.value: ",      signif(plot_data$adj.P.Val, 3))
   )
+  if (!is.null(color_var) && color_var %in% names(plot_data))
+    hover_lines <- c(hover_lines,
+                     list(paste0(color_label, ": ", plot_data[[color_var]])))
   if ("PG.UniProtIds" %in% names(plot_data))
     hover_lines <- c(list(paste0("Uniprot ID: ", plot_data$PG.UniProtIds)), hover_lines)
   if ("PG.Genes" %in% names(plot_data))
@@ -389,6 +399,25 @@ plot_volcano <- function(results,
 
   plot_data$hover_text <- do.call(paste, c(hover_lines, sep = "<br>"))
 
+  use_color_var <- !is.null(color_var) && color_var %in% names(plot_data)
+
+  marker_spec <- if (use_color_var) {
+    color_vals <- pmin(plot_data[[color_var]], 5L)
+    list(
+      color        = color_vals,
+      colorscale   = "Viridis",
+      showscale    = TRUE,
+      reversescale = TRUE,
+      cmin         = 1,
+      cmax         = 5,
+      colorbar     = list(title = color_label),
+      size         = 5,
+      opacity      = 0.7
+    )
+  } else {
+    list(color = "black", size = 5, opacity = 0.7)
+  }
+
   plotly::plot_ly(
     data         = plot_data,
     x            = ~logFC,
@@ -397,7 +426,7 @@ plot_volcano <- function(results,
     text         = ~hover_text,
     type         = "scatter",
     mode         = "markers",
-    marker       = list(color = "black", size = 5, opacity = 0.7),
+    marker       = marker_spec,
     source       = plotly_source,
     hovertemplate = "%{text}<extra></extra>"
   ) |>
@@ -572,14 +601,19 @@ plot_protein_heatmap <- function(data,
   tryCatch(
     make_heatmap(),
     error = function(e) {
-      if (grepl("NA/NaN/Inf", conditionMessage(e), fixed = TRUE)) {
-        make_heatmap(
-          Rowv = FALSE, Colv = FALSE,
-          main = "(clustering disabled — too many missing values)"
-        )
-      } else {
-        stop(e)
-      }
+      if (!grepl("NA/NaN/Inf", conditionMessage(e), fixed = TRUE)) stop(e)
+      # Drop all-NA rows and columns then retry with clustering
+      mat            <<- mat[rowSums(!is.na(mat)) > 0, , drop = FALSE]
+      mat            <<- mat[, colSums(!is.na(mat)) > 0, drop = FALSE]
+      col_annotation <<- col_annotation[colnames(mat), , drop = FALSE]
+      tryCatch(
+        make_heatmap(Rowv = TRUE),
+        error = function(e2) {
+          if (!grepl("NA/NaN/Inf", conditionMessage(e2), fixed = TRUE)) stop(e2)
+          make_heatmap(Rowv = FALSE, Colv = FALSE,
+                       main = "(clustering disabled — too many missing values)")
+        }
+      )
     }
   )
 }
@@ -602,6 +636,9 @@ plot_protein_heatmap <- function(data,
 #' @param peptide_metadata A tibble of peptide annotations with columns
 #'   \code{id} and \code{PG.ProteinAccessions}. Optionally a \code{Sequence}
 #'   column provides row labels.
+#' @param scale_rows Logical. If \code{TRUE} rows are z-score scaled and the
+#'   blue-white-red gradient is used; if \code{FALSE} raw intensities are shown
+#'   with the viridis palette. Default \code{TRUE}.
 #'
 #' @return A \code{plotly}/\code{heatmaply} object.
 #'
@@ -620,7 +657,8 @@ plot_protein_heatmap <- function(data,
 plot_peptide_heatmap <- function(peptide_data,
                                  metadata,
                                  proteins,
-                                 peptide_metadata) {
+                                 peptide_metadata,
+                                 scale_rows = TRUE) {
 
   protein_pattern <- paste(proteins, collapse = "|")
 
@@ -667,17 +705,58 @@ plot_peptide_heatmap <- function(peptide_data,
     tibble::column_to_rownames("Sample_name")
   col_annotation <- col_annotation[colnames(pep_subset), , drop = FALSE]
 
-  heatmaply::heatmaply(
-    pep_subset,
-    scale           = "row",
-    col_side_colors = col_annotation,
-    showticklabels  = c(TRUE, TRUE),
-    xlab            = "Sample",
-    ylab            = "Peptide",
-    main            = "",
-    plot_method     = "plotly",
-    colors          = grDevices::colorRampPalette(
-      rev(RColorBrewer::brewer.pal(11, "RdBu"))
-    )(256)
+  make_heatmap <- function(Rowv = TRUE, Colv = FALSE, main = "") {
+    if (scale_rows) {
+      heatmaply::heatmaply(
+        pep_subset,
+        scale                   = "row",
+        col_side_colors         = col_annotation,
+        showticklabels          = c(TRUE, TRUE),
+        xlab                    = "Sample",
+        ylab                    = "Peptide",
+        main                    = main,
+        plot_method             = "ggplot",
+        scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(
+          low  = "blue",
+          mid  = "white",
+          high = "red"
+        ),
+        Rowv                    = Rowv,
+        Colv                    = Colv
+      )
+    } else {
+      heatmaply::heatmaply(
+        pep_subset,
+        scale           = "none",
+        col_side_colors = col_annotation,
+        showticklabels  = c(TRUE, TRUE),
+        xlab            = "Sample",
+        ylab            = "Peptide",
+        main            = main,
+        plot_method     = "plotly",
+        colors          = viridisLite::viridis(256),
+        Rowv            = Rowv,
+        Colv            = Colv
+      )
+    }
+  }
+
+  tryCatch(
+    make_heatmap(),
+    error = function(e) {
+      if (!grepl("NA/NaN/Inf", conditionMessage(e), fixed = TRUE)) stop(e)
+      # Drop all-NA rows and columns then retry with clustering
+      pep_subset     <<- pep_subset[rowSums(!is.na(pep_subset)) > 0, , drop = FALSE]
+      pep_subset     <<- pep_subset[, colSums(!is.na(pep_subset)) > 0, drop = FALSE]
+      col_annotation <<- col_annotation[colnames(pep_subset), , drop = FALSE]
+      tryCatch(
+        make_heatmap(Rowv = TRUE),
+        error = function(e2) {
+          if (!grepl("NA/NaN/Inf", conditionMessage(e2), fixed = TRUE)) stop(e2)
+          make_heatmap(Rowv = FALSE, Colv = FALSE,
+                       main = "(clustering disabled — too many missing values)")
+        }
+      )
+    }
   )
 }
