@@ -29,17 +29,63 @@ readSamplesReport <- function(filePath, type){
 }
 
 readQuantReport <- function(filePath, type){
-  x1 <- read_tsv(filePath, guess_max = 10000) %>%
-    {purrr::set_names(., gsub(" ", "_", names(.)))} %>%
-    select(PG.ProteinGroups, PG.Genes, PG.ProteinDescriptions, PG.UniProtIds, contains("raw.PG.Quantity")) %>%
-    distinct() %>%
-    rownames_to_column("id")
+  raw <- read_tsv(filePath, guess_max = 10000) %>%
+    {purrr::set_names(., gsub(" ", "_", names(.)))}
 
-  # Normalise to bare R.FileName:
-  #   "[1]_StoreyAJ_20260324_01_DIA_01.raw.PG.Quantity" → "StoreyAJ_20260324_01_DIA_01"
-  quant_cols <- grep("raw\\.PG\\.Quantity", names(x1), value = TRUE)
-  normalised  <- sub("^\\[\\d+\\]_", "", sub("\\.raw\\.PG\\.Quantity$", "", quant_cols))
-  names(x1)[match(quant_cols, names(x1))] <- normalised
+  # Wide-format Spectronaut protein reports have one row per protein group and
+  # one column per raw file (e.g. "[1] Sample.raw.PG.Quantity"). Long-format
+  # reports instead have one row per protein group PER raw file, with
+  # R.FileName/PG.Quantity columns, and lack PG.ProteinGroups entirely.
+  is_long <- all(c("R.FileName", "PG.Quantity") %in% names(raw)) &&
+    !("PG.ProteinGroups" %in% names(raw))
+
+  if (is_long) {
+    # Spectronaut writes literal "NaN" strings into character columns for
+    # rows with missing descriptions, so treat those as true NA first.
+    raw2 <- raw %>%
+      mutate(across(c(PG.ProteinDescriptions, PG.ProteinNames), ~ na_if(., "NaN")))
+
+    protein_meta <- raw2 %>%
+      group_by(PG.ProteinAccessions) %>%
+      summarise(
+        PG.ProteinDescriptions = dplyr::first(na.omit(PG.ProteinDescriptions)),
+        PG.ProteinNames = dplyr::first(na.omit(PG.ProteinNames)),
+        .groups = "drop"
+      )
+
+    # Long-format reports can carry multiple rows for the same protein group
+    # in the same file (e.g. a single-hit placeholder row); collapse those
+    # with max() so one quantity value survives per protein group per file.
+    quant_wide <- raw2 %>%
+      group_by(PG.ProteinAccessions, R.FileName) %>%
+      summarise(
+        PG.Quantity = if (all(is.na(PG.Quantity))) NA_real_ else max(PG.Quantity, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      pivot_wider(names_from = R.FileName, values_from = PG.Quantity)
+
+    x1 <- protein_meta %>%
+      left_join(quant_wide, by = "PG.ProteinAccessions") %>%
+      mutate(
+        PG.ProteinGroups = PG.ProteinAccessions,
+        PG.UniProtIds = PG.ProteinAccessions,
+        PG.Genes = NA_character_
+      ) %>%
+      select(PG.ProteinGroups, PG.Genes, PG.ProteinDescriptions, PG.UniProtIds, everything(), -PG.ProteinAccessions) %>%
+      distinct() %>%
+      rownames_to_column("id")
+  } else {
+    x1 <- raw %>%
+      select(PG.ProteinGroups, PG.Genes, PG.ProteinDescriptions, PG.UniProtIds, PG.ProteinNames, contains("raw.PG.Quantity")) %>%
+      distinct() %>%
+      rownames_to_column("id")
+
+    # Normalise to bare R.FileName:
+    #   "[1]_StoreyAJ_20260324_01_DIA_01.raw.PG.Quantity" → "StoreyAJ_20260324_01_DIA_01"
+    quant_cols <- grep("raw\\.PG\\.Quantity", names(x1), value = TRUE)
+    normalised  <- sub("^\\[\\d+\\]_", "", sub("\\.raw\\.PG\\.Quantity$", "", quant_cols))
+    names(x1)[match(quant_cols, names(x1))] <- normalised
+  }
 
   return(x1)
 }
@@ -376,15 +422,15 @@ makeProteinMeta <- function(x, type){
   }
   
   else if (type == "Spectronaut") {
-    
-    column_test <- c("id", "PG.ProteinDescriptions", "PG.ProteinGroups", "PG.Genes", "PG.UniProtIds")
+
+    column_test <- c("id", "PG.ProteinDescriptions", "PG.ProteinGroups", "PG.Genes", "PG.UniProtIds", "PG.ProteinNames")
     column_test <- column_test[column_test %in% names(x)]
-    
+
     x %>%
       select(one_of(column_test)) %>%
       mutate(Protein_Name = PG.ProteinGroups) %>%
       mutate(Description = PG.ProteinDescriptions,
-             Gene_name = PG.Genes,
+             Gene_name = PG.ProteinNames,
              Uniprot_ID = PG.UniProtIds)
   }
 
