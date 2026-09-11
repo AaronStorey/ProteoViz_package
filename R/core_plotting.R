@@ -351,6 +351,10 @@ plot_missing_values <- function(data, metadata) {
 #'   a colour bar). When \code{NULL} (default) points are drawn in solid black.
 #' @param color_label Character. Label shown on the colour bar. Defaults to
 #'   \code{color_var}.
+#' @param highlight_ids Character vector or \code{NULL}. Values of
+#'   \code{results[[key_col]]} to draw as enlarged red points on top of the
+#'   base scatter, e.g. proteins chosen in a "highlight a protein" search box.
+#'   When \code{NULL} or empty (default), no highlight trace is added.
 #'
 #' @return A \code{plotly} object.
 #'
@@ -373,7 +377,8 @@ plot_volcano <- function(results,
                          plotly_source = "proteinVolcano",
                          key_col       = "protein",
                          color_var     = NULL,
-                         color_label   = color_var) {
+                         color_label   = color_var,
+                         highlight_ids = NULL) {
 
   p_col   <- if (use_adj_p) "adj.P.Val" else "P.Value"
   y_label <- if (use_adj_p) "-log10 adj.p.value" else "-log10 p.value"
@@ -418,7 +423,7 @@ plot_volcano <- function(results,
     list(color = "black", size = 5, opacity = 0.7)
   }
 
-  plotly::plot_ly(
+  fig <- plotly::plot_ly(
     data         = plot_data,
     x            = ~logFC,
     y            = ~neg_log10_p,
@@ -428,8 +433,31 @@ plot_volcano <- function(results,
     mode         = "markers",
     marker       = marker_spec,
     source       = plotly_source,
-    hovertemplate = "%{text}<extra></extra>"
-  ) |>
+    hovertemplate = "%{text}<extra></extra>",
+    showlegend   = FALSE
+  )
+
+  if (!is.null(highlight_ids) && length(highlight_ids) > 0) {
+    highlight_data <- plot_data[plot_data[[key_col]] %in% highlight_ids, , drop = FALSE]
+    if (nrow(highlight_data) > 0) {
+      fig <- fig |>
+        plotly::add_trace(
+          data          = highlight_data,
+          x             = ~logFC,
+          y             = ~neg_log10_p,
+          key           = highlight_data[[key_col]],
+          text          = ~hover_text,
+          type          = "scatter",
+          mode          = "markers",
+          marker        = list(color = "red", size = 9, opacity = 1),
+          hovertemplate = "%{text}<extra></extra>",
+          showlegend    = FALSE,
+          inherit       = FALSE
+        )
+    }
+  }
+
+  fig |>
     plotly::layout(
       dragmode   = "select",
       xaxis      = list(title = "log2 FC"),
@@ -639,6 +667,8 @@ plot_protein_heatmap <- function(data,
 #' @param scale_rows Logical. If \code{TRUE} rows are z-score scaled and the
 #'   blue-white-red gradient is used; if \code{FALSE} raw intensities are shown
 #'   with the viridis palette. Default \code{TRUE}.
+#' @param exclude_groups A character vector of group labels to exclude from the
+#'   heatmap. Defaults to \code{NULL}.
 #'
 #' @return A \code{plotly}/\code{heatmaply} object.
 #'
@@ -658,7 +688,16 @@ plot_peptide_heatmap <- function(peptide_data,
                                  metadata,
                                  proteins,
                                  peptide_metadata,
-                                 scale_rows = TRUE) {
+                                 scale_rows = TRUE,
+                                 exclude_groups = NULL) {
+
+  if (!is.null(exclude_groups) && length(exclude_groups) > 0) {
+    keep_samples <- metadata |>
+      dplyr::filter(!Group %in% exclude_groups) |>
+      dplyr::pull(Sample_name)
+    peptide_data <- dplyr::filter(peptide_data, Sample_name %in% keep_samples)
+    metadata     <- dplyr::filter(metadata, Sample_name %in% keep_samples)
+  }
 
   protein_pattern <- paste(proteins, collapse = "|")
 
@@ -697,6 +736,10 @@ plot_peptide_heatmap <- function(peptide_data,
     new_rownames[is.na(new_rownames)] <- rownames(pep_subset)[is.na(new_rownames)]
     rownames(pep_subset) <- new_rownames
   }
+
+  # Order columns by design table row order, then build annotation in that order
+  design_col_order <- metadata$Sample_name[metadata$Sample_name %in% colnames(pep_subset)]
+  pep_subset <- pep_subset[, design_col_order, drop = FALSE]
 
   col_annotation <- metadata |>
     dplyr::filter(Sample_name %in% colnames(pep_subset)) |>

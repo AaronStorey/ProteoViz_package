@@ -519,10 +519,25 @@ runApp2 <- function(options = list()){
     
     observe({
       if(isTruthy(metadata())){
-        x1 <- metadata() %>%
-          select(Protein_Name)
+        meta <- metadata()
+        gene_col <- intersect(c("Gene_name", "PG.Genes"), names(meta))
+        desc_col <- intersect(c("Description", "PG.ProteinDescriptions"), names(meta))
+
+        x1 <- meta %>%
+          mutate(
+            .gene = if (length(gene_col) > 0) .data[[gene_col[1]]] else NA_character_,
+            .desc = if (length(desc_col) > 0) .data[[desc_col[1]]] else NA_character_,
+            .label = dplyr::case_when(
+              !is.na(.gene) & !is.na(.desc) ~ paste0(.gene, " - ", .desc),
+              !is.na(.gene) ~ .gene,
+              !is.na(.desc) ~ .desc,
+              TRUE ~ Protein_Name
+            )
+          )
+
+        choices <- setNames(x1$Protein_Name, x1$.label)
         updateSelectInput(session, "ProteinSearch",
-                          choices = x1)
+                          choices = choices)
       }
     })
 
@@ -1086,12 +1101,21 @@ runApp2 <- function(options = list()){
         }
       }
 
+      highlight_ids <- character(0)
+      if (isTruthy(input$ProteinSearch) && isTruthy(metadata())) {
+        highlight_ids <- metadata() |>
+          dplyr::filter(Protein_Name %in% input$ProteinSearch) |>
+          dplyr::pull(id) |>
+          as.character()
+      }
+
       plot_volcano(
         plot_data,
         fc_threshold  = FCcutoff,
         p_threshold   = Pcutoff,
         use_adj_p     = useAdjP,
         plotly_source = "proteinVolcano",
+        highlight_ids = highlight_ids,
         key_col       = "protein",
         color_var     = color_var,
         color_label   = "# Peptides"
@@ -1216,7 +1240,8 @@ runApp2 <- function(options = list()){
         sample_table_df(),
         proteins         = protein_names,
         peptide_metadata = peptide_metadata(),
-        scale_rows       = input$phscalecheck
+        scale_rows       = input$phscalecheck,
+        exclude_groups   = excluded_groups()
       )
     })
 
@@ -1240,7 +1265,8 @@ runApp2 <- function(options = list()){
         sample_table_df(),
         proteins         = protein_names,
         peptide_metadata = peptide_metadata(),
-        scale_rows       = input$phscalecheck
+        scale_rows       = input$phscalecheck,
+        exclude_groups   = excluded_groups()
       )
     }))
 
