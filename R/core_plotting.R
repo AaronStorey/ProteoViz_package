@@ -8,6 +8,7 @@
 #   plot_correlation_heatmap()      -- sample correlation heatmap
 #   plot_missing_values()           -- missing value pattern heatmap
 #   plot_volcano()                  -- volcano plot for a single Limma result
+#   plot_exclusive_detection()      -- scatter plot of exclusively-detected proteins
 #   plot_protein_heatmap()          -- protein-level interactive heatmap
 #   plot_peptide_heatmap()          -- peptide-level interactive heatmap
 
@@ -478,6 +479,169 @@ plot_volcano <- function(results,
         list(type = "line",
              x0 = 0, x1 = 1, xref = "paper",
              y0 = -log10(p_threshold), y1 = -log10(p_threshold),
+             line = list(color = "grey50", width = 1, dash = "dash"))
+      )
+    )
+}
+
+
+# plot_exclusive_detection ------------------------------------------------------
+
+#' Plot proteins exclusively detected on one side of a contrast
+#'
+#' @title Scatter plot of exclusively-detected proteins
+#'
+#' @description Produces an interactive \code{plotly} scatter plot of proteins
+#'   for which limma could not compute a moderated t-test because one side of
+#'   the contrast had no quantitative values at all (the source of limma's
+#'   \code{"Partial NA coefficients"} warning). Since a p-value/fold-change is
+#'   undefined for these proteins, they are instead ranked by detection
+#'   evidence: mean intensity in the group where the protein was observed
+#'   (y-axis) versus number of peptides detected (x-axis).
+#'
+#'   The x-axis is split symmetrically around zero using \code{contrast_side}:
+#'   proteins exclusive to the first group named in the contrast plot to the
+#'   left, proteins exclusive to the second group plot to the right, so a
+#'   point's side immediately identifies which group it was detected in. Each
+#'   side is compressed on a log2 scale (peptide counts of 1, 2, 4, 8, ...)
+#'   so that a handful of proteins with many peptides don't compress the rest
+#'   of the points near the origin.
+#'
+#' @param results A tibble as returned by
+#'   \code{\link{find_exclusive_proteins}}, with at minimum the columns
+#'   \code{protein}, \code{contrast_side}, \code{exclusive_group},
+#'   \code{other_group}, \code{mean_intensity}, \code{n_detected}, and
+#'   \code{n_total_in_group}. An optional \code{n_peptides} column drives the
+#'   x-axis (rows without it are plotted at the "1 peptide" position);
+#'   optional metadata columns \code{PG.ProteinDescriptions}, \code{PG.Genes},
+#'   and \code{PG.UniProtIds} are included in the hover label when present.
+#' @param plotly_source Character. Passed as the \code{source} argument to
+#'   \code{plotly::plot_ly()}. Defaults to \code{"exclusiveDetection"}.
+#' @param key_col Character. Column in \code{results} used as the plotly
+#'   \code{key}. Defaults to \code{"protein"}.
+#' @param highlight_ids Character vector or \code{NULL}. Values of
+#'   \code{results[[key_col]]} to draw as enlarged red points on top of the
+#'   base scatter. Defaults to \code{NULL}.
+#'
+#' @return A \code{plotly} object.
+#'
+#' @examples
+#' \dontrun{
+#' exclusive <- find_exclusive_proteins(limma_input_matrix, sample_table,
+#'                                      "S20_15105 - Pregnancy")
+#' plot_exclusive_detection(exclusive)
+#' }
+#'
+#' @export
+plot_exclusive_detection <- function(results,
+                                     plotly_source = "exclusiveDetection",
+                                     key_col       = "protein",
+                                     highlight_ids = NULL) {
+
+  if (is.null(results) || nrow(results) == 0) {
+    return(
+      plotly::plotly_empty(type = "scatter", mode = "markers") |>
+        plotly::layout(
+          title = list(text = "No exclusively-detected proteins for this comparison")
+        )
+    )
+  }
+
+  plot_data <- results
+
+  n_peptides <- if ("n_peptides" %in% names(plot_data)) plot_data$n_peptides else NA_integer_
+  n_peptides_safe <- n_peptides
+  n_peptides_safe[is.na(n_peptides_safe) | n_peptides_safe < 1] <- 1
+
+  side_sign <- ifelse(plot_data$contrast_side == "A", 1, -1)
+  magnitude <- log2(n_peptides_safe) + 1
+  x_signed  <- side_sign * magnitude
+
+  hover_lines <- list(
+    paste0("Detected in: ", plot_data$exclusive_group,
+           " (", plot_data$n_detected, "/", plot_data$n_total_in_group, ")"),
+    paste0("Absent in: ", plot_data$other_group),
+    paste0("Mean intensity: ", round(plot_data$mean_intensity, 3)),
+    paste0("# Peptides: ", ifelse(is.na(n_peptides), "unknown", n_peptides))
+  )
+  if ("PG.UniProtIds" %in% names(plot_data))
+    hover_lines <- c(list(paste0("Uniprot ID: ", plot_data$PG.UniProtIds)), hover_lines)
+  if ("PG.Genes" %in% names(plot_data))
+    hover_lines <- c(list(paste0("Gene name: ", plot_data$PG.Genes)), hover_lines)
+  if ("PG.ProteinDescriptions" %in% names(plot_data))
+    hover_lines <- c(list(paste0("Protein: ", plot_data$PG.ProteinDescriptions)), hover_lines)
+
+  plot_data$hover_text <- do.call(paste, c(hover_lines, sep = "<br>"))
+  plot_data$x_signed    <- x_signed
+
+  # Build symmetric log2 tick marks (1, 2, 4, 8, ...) mirrored on both sides
+  max_n           <- max(n_peptides_safe, 1)
+  max_power       <- ceiling(log2(max_n))
+  peptide_ticks   <- 2^(0:max_power)
+  magnitude_ticks <- log2(peptide_ticks) + 1
+  tickvals        <- c(-rev(magnitude_ticks), magnitude_ticks)
+  ticktext        <- c(rev(as.character(peptide_ticks)), as.character(peptide_ticks))
+
+  # side_labels[1] is the "A" group name, side_labels[2] is the "B" group
+  # name; A plots on the right and B on the left (see side_sign above).
+  side_labels <- unique(stats::na.omit(
+    plot_data$exclusive_group[order(plot_data$contrast_side)]
+  ))
+  axis_title <- if (length(side_labels) == 2) {
+    paste0("← ", side_labels[2], "      # Peptides detected      ",
+           side_labels[1], " →")
+  } else {
+    "# Peptides detected (log2, split by contrast side)"
+  }
+
+  fig <- plotly::plot_ly(
+    data          = plot_data,
+    x             = ~x_signed,
+    y             = ~mean_intensity,
+    key           = plot_data[[key_col]],
+    text          = ~hover_text,
+    type          = "scatter",
+    mode          = "markers",
+    marker        = list(color = "black", size = 7, opacity = 0.7),
+    source        = plotly_source,
+    hovertemplate = "%{text}<extra></extra>",
+    showlegend    = FALSE
+  )
+
+  if (!is.null(highlight_ids) && length(highlight_ids) > 0) {
+    highlight_data <- plot_data[plot_data[[key_col]] %in% highlight_ids, , drop = FALSE]
+    if (nrow(highlight_data) > 0) {
+      fig <- fig |>
+        plotly::add_trace(
+          data          = highlight_data,
+          x             = ~x_signed,
+          y             = ~mean_intensity,
+          key           = highlight_data[[key_col]],
+          text          = ~hover_text,
+          type          = "scatter",
+          mode          = "markers",
+          marker        = list(color = "red", size = 10, opacity = 1),
+          hovertemplate = "%{text}<extra></extra>",
+          showlegend    = FALSE,
+          inherit       = FALSE
+        )
+    }
+  }
+
+  fig |>
+    plotly::layout(
+      dragmode = "select",
+      xaxis    = list(
+        title    = axis_title,
+        tickvals = tickvals,
+        ticktext = ticktext,
+        zeroline = TRUE
+      ),
+      yaxis    = list(title = "Mean log2 intensity"),
+      shapes   = list(
+        list(type = "line",
+             x0 = 0, x1 = 0,
+             y0 = 0, y1 = 1, yref = "paper",
              line = list(color = "grey50", width = 1, dash = "dash"))
       )
     )

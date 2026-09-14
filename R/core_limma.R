@@ -203,6 +203,121 @@ make_test_results_list <- function(tidy_test_results) {
 
 
 # ---------------------------------------------------------------------------
+# Exported: find proteins exclusively detected in one side of a contrast
+# ---------------------------------------------------------------------------
+
+#' @title Find proteins exclusively detected on one side of a contrast
+#'
+#' @description Identifies proteins for which every sample on one side of a
+#'   contrast is missing (\code{NA}) while at least one sample on the other
+#'   side has a value. These are the proteins responsible for limma's
+#'   \code{"Partial NA coefficients"} warning — a moderated t-test is
+#'   undefined for them because one group has no quantitative values at all.
+#'   Rather than forcing a p-value, this function reports detection-based
+#'   statistics (mean intensity and number of replicates detected) so these
+#'   proteins can be ranked and visualised separately from the standard
+#'   volcano plot.
+#'
+#' @param data_matrix A numeric matrix with proteins in rows and samples in
+#'   columns, as passed to \code{\link{run_limma}}. Row names are used as
+#'   protein identifiers.
+#' @param sample_table A data frame with \code{Sample_name} and \code{Group}
+#'   columns (as used by \code{\link{build_design_matrix}}).
+#' @param comparison A single contrast string of the form
+#'   \code{"GroupA - GroupB"}, matching the group names in
+#'   \code{sample_table$Group}.
+#' @param peptide_counts An optional data frame with columns \code{protein}
+#'   and \code{n_peptides} to join onto the result. Defaults to \code{NULL}.
+#'
+#' @return A tibble with one row per exclusively-detected protein and the
+#'   columns \code{protein}, \code{Comparison}, \code{contrast_side}
+#'   (\code{"A"} if detected in the first group named in \code{comparison},
+#'   \code{"B"} if the second), \code{exclusive_group} (the group the protein
+#'   was detected in), \code{other_group}, \code{mean_intensity} (mean of the
+#'   non-missing values), \code{n_detected}, and \code{n_total_in_group}.
+#'   Proteins detected (or missing) on both sides of the contrast are
+#'   excluded. Returns an empty tibble if \code{comparison} cannot be split
+#'   into two group names.
+#'
+#' @examples
+#' \dontrun{
+#' exclusive <- find_exclusive_proteins(
+#'   data_matrix    = limma_input_matrix,
+#'   sample_table   = sample_table,
+#'   comparison     = "S20_15105 - Pregnancy",
+#'   peptide_counts = peptide_counts
+#' )
+#' }
+#'
+#' @export
+find_exclusive_proteins <- function(data_matrix, sample_table, comparison,
+                                    peptide_counts = NULL) {
+  parts <- trimws(strsplit(comparison, " - ", fixed = TRUE)[[1]])
+  if (length(parts) != 2) return(tibble::tibble())
+
+  group_a <- parts[1]
+  group_b <- parts[2]
+
+  samples_a <- sample_table$Sample_name[sample_table$Group == group_a]
+  samples_b <- sample_table$Sample_name[sample_table$Group == group_b]
+
+  mat_a <- data_matrix[, colnames(data_matrix) %in% samples_a, drop = FALSE]
+  mat_b <- data_matrix[, colnames(data_matrix) %in% samples_b, drop = FALSE]
+
+  n_detected_a <- rowSums(!is.na(mat_a))
+  n_detected_b <- rowSums(!is.na(mat_b))
+
+  exclusive_a <- n_detected_a > 0 & n_detected_b == 0
+  exclusive_b <- n_detected_b > 0 & n_detected_a == 0
+
+  mean_a <- rowMeans(mat_a, na.rm = TRUE)
+  mean_b <- rowMeans(mat_b, na.rm = TRUE)
+
+  result <- tibble::tibble(
+    protein          = rownames(data_matrix),
+    Comparison       = comparison,
+    contrast_side    = dplyr::case_when(
+      exclusive_a ~ "A",
+      exclusive_b ~ "B",
+      TRUE        ~ NA_character_
+    ),
+    exclusive_group  = dplyr::case_when(
+      exclusive_a ~ group_a,
+      exclusive_b ~ group_b,
+      TRUE        ~ NA_character_
+    ),
+    other_group      = dplyr::case_when(
+      exclusive_a ~ group_b,
+      exclusive_b ~ group_a,
+      TRUE        ~ NA_character_
+    ),
+    mean_intensity   = dplyr::case_when(
+      exclusive_a ~ mean_a,
+      exclusive_b ~ mean_b,
+      TRUE        ~ NA_real_
+    ),
+    n_detected       = dplyr::case_when(
+      exclusive_a ~ n_detected_a,
+      exclusive_b ~ n_detected_b,
+      TRUE        ~ NA_integer_
+    ),
+    n_total_in_group = dplyr::case_when(
+      exclusive_a ~ ncol(mat_a),
+      exclusive_b ~ ncol(mat_b),
+      TRUE        ~ NA_integer_
+    )
+  ) |>
+    dplyr::filter(!is.na(exclusive_group))
+
+  if (!is.null(peptide_counts)) {
+    result <- dplyr::left_join(result, peptide_counts, by = "protein")
+  }
+
+  result
+}
+
+
+# ---------------------------------------------------------------------------
 # Exported: write a wide-format summary TSV joining quant + limma results
 # ---------------------------------------------------------------------------
 
