@@ -302,48 +302,8 @@ runApp2 <- function(options = list()){
           column(6,
                  box(
                    width = 12,
-                   title = "GO Enrichment (selected proteins)",
-                   checkboxInput("goEnrichCheck",
-                                 "Run GO enrichment on selected proteins",
-                                 value = FALSE),
-                   fluidRow(
-                     column(4,
-                            selectInput("goOnt", "Ontology",
-                                        choices  = c("Biological Process" = "BP",
-                                                     "Molecular Function" = "MF",
-                                                     "Cellular Component" = "CC",
-                                                     "All"               = "ALL"),
-                                        selected = "BP")),
-                     column(4,
-                            selectInput("goScoreType", "Score type",
-                                        choices  = c("Standard" = "std",
-                                                     "Positive" = "pos",
-                                                     "Negative" = "neg"),
-                                        selected = "std")),
-                     column(4,
-                            textInput("goPvalueCutoff", "p-value cutoff", value = "0.05"))
-                   ),
-                   fluidRow(
-                     column(4,
-                            textInput("goShowCategory", "Categories to show", value = "20")),
-                     column(4,
-                            selectInput("goGeneSet", "Heatmap gene set",
-                                        choices  = c("Core enrichment" = "core",
-                                                     "Full gene set"   = "full"),
-                                        selected = "core"))
-                   ),
-                   tabBox(
-                     id    = "goPlotTabs",
-                     width = 12,
-                     tabPanel("Dot plot",
-                              plotlyOutput("goEnrichPlot", height = "500px")),
-                     tabPanel("Network (cnetplot)",
-                              plotOutput("goCnetplot", height = "600px")),
-                     tabPanel("Heat plot",
-                              plotOutput("goHeatplot", height = "500px")),
-                     tabPanel("GSEA plot",
-                              plotOutput("goGseaplot", height = "500px"))
-                   )
+                   title = "Exclusively detected proteins (partial NA coefficients)",
+                   plotlyOutput("exclusiveDetectionPlot", height = "500px")
                  )
           ))
       )
@@ -1068,6 +1028,19 @@ runApp2 <- function(options = list()){
       }
     })
 
+    # Shared by the volcano plot and the exclusive-detection plot so that
+    # searching for a protein highlights it on whichever plot it falls on.
+    highlight_ids <- reactive({
+      if (isTruthy(input$ProteinSearch) && isTruthy(metadata())) {
+        metadata() |>
+          dplyr::filter(Protein_Name %in% input$ProteinSearch) |>
+          dplyr::pull(id) |>
+          as.character()
+      } else {
+        character(0)
+      }
+    })
+
     output$ProteinVolcanoplot <- renderPlotly({
       req(combined_data())
       req(input$ProteinVolcanoComparison)
@@ -1101,21 +1074,13 @@ runApp2 <- function(options = list()){
         }
       }
 
-      highlight_ids <- character(0)
-      if (isTruthy(input$ProteinSearch) && isTruthy(metadata())) {
-        highlight_ids <- metadata() |>
-          dplyr::filter(Protein_Name %in% input$ProteinSearch) |>
-          dplyr::pull(id) |>
-          as.character()
-      }
-
       plot_volcano(
         plot_data,
         fc_threshold  = FCcutoff,
         p_threshold   = Pcutoff,
         use_adj_p     = useAdjP,
         plotly_source = "proteinVolcano",
-        highlight_ids = highlight_ids,
+        highlight_ids = highlight_ids(),
         key_col       = "protein",
         color_var     = color_var,
         color_label   = "# Peptides"
@@ -1131,24 +1096,39 @@ runApp2 <- function(options = list()){
         filter(as.character(id) %in% d$key)
     })
 
+    # Clicking a point on either the volcano plot or the exclusive-detection
+    # plot should drive the peptide heatmap below, so both sources feed the
+    # same reactiveVal rather than each output reading its own event_data().
+    clicked_protein_key <- reactiveVal(NULL)
+
+    observeEvent(plotly::event_data("plotly_click", source = "proteinVolcano"), {
+      d <- plotly::event_data("plotly_click", source = "proteinVolcano")
+      req(d)
+      clicked_protein_key(as.character(d$key))
+    })
+
+    observeEvent(plotly::event_data("plotly_click", source = "exclusiveDetection"), {
+      d <- plotly::event_data("plotly_click", source = "exclusiveDetection")
+      req(d)
+      clicked_protein_key(as.character(d$key))
+    })
+
     protein_click_data <- reactive({
       req(quant_data())
-      d <- plotly::event_data("plotly_click", source = "proteinVolcano")
-      req(!is.null(d))
+      req(clicked_protein_key())
 
       quant_data() %>%
-        filter(as.character(id) %in% d$key)
+        filter(as.character(id) %in% clicked_protein_key())
     })
 
     peptide_click_data <- reactive({
       req(quant_data())
       req(metadata())
       req(peptide_metadata())
-      d <- plotly::event_data("plotly_click", source = "proteinVolcano")
-      req(!is.null(d))
+      req(clicked_protein_key())
 
       protein_id <- metadata() %>%
-        filter(as.character(id) %in% d$key)
+        filter(as.character(id) %in% clicked_protein_key())
       
       #If DIA peptide metadata
       if("Protein_Accessions" %in% names(peptide_metadata())){
@@ -1199,13 +1179,8 @@ runApp2 <- function(options = list()){
       req(quant_data())
       req(sample_table_df())
 
-      # GO dotplot click takes priority; fall back to volcano selection
-      heat_ids <- if (isTruthy(go_click_proteins()) && nrow(go_click_proteins()) > 0) {
-        go_click_proteins()$id
-      } else {
-        req(selected_data())
-        selected_data()$id
-      }
+      req(selected_data())
+      heat_ids <- selected_data()$id
 
       quant_long <- quant_data() |>
         tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
@@ -1319,93 +1294,43 @@ runApp2 <- function(options = list()){
     
 
 
-    # GO Enrichment -----------------------------------------------------------
+    # Exclusive detection (partial NA coefficients) ----------------------------
 
-    go_result <- reactive({
-      req(input$goEnrichCheck)
-      req(quant_data())
-      req(metadata())
-      req(selected_data())
+    exclusive_detection_data <- reactive({
+      req(limma_input())
+      req(sample_table_df())
+      req(input$ProteinVolcanoComparison)
 
-      run_go_enrichment(
-        quant_data(), metadata(), selected_data(),
-        ont           = input$goOnt,
-        score_type    = input$goScoreType,
-        pvalue_cutoff = as.numeric(input$goPvalueCutoff)
-      )
-    })
+      mat <- as.matrix(limma_input())
+      pc  <- tryCatch(peptide_counts(), error = function(e) NULL)
 
-    # Unpack ego and gene_list from go_result(); return NULL if not yet computed
-    go_ego <- reactive({
-      r <- tryCatch(go_result(), error = function(e) NULL)
-      if (is.null(r)) NULL else r$ego
-    })
+      results <- purrr::map(
+        input$ProteinVolcanoComparison,
+        \(cmp) find_exclusive_proteins(mat, sample_table_df(), cmp, peptide_counts = pc)
+      ) |>
+        purrr::list_rbind()
 
-    go_gene_list <- reactive({
-      r <- tryCatch(go_result(), error = function(e) NULL)
-      if (is.null(r)) NULL else r$gene_list
-    })
-
-    go_show_category <- reactive({
-      n <- suppressWarnings(as.integer(input$goShowCategory))
-      if (is.na(n) || n < 1) 20L else n
-    })
-
-    output$goEnrichPlot <- renderPlotly({
-      plot_go_dotplot(go_ego(),
-                      show_category = go_show_category(),
-                      plotly_source = "goDotplot")
-    })
-
-    output$goCnetplot <- renderPlot({
-      plot_go_cnetplot(go_ego(), go_gene_list(),
-                       show_category = go_show_category())
-    })
-
-    output$goHeatplot <- renderPlot({
-      plot_go_heatplot(go_ego(), go_gene_list(),
-                       show_category = go_show_category())
-    })
-
-    output$goGseaplot <- renderPlot({
-      d     <- plotly::event_data("plotly_click", source = "goDotplot")
-      go_id <- if (!is.null(d)) d$key else NULL
-      plot_go_gseaplot(go_ego(), go_id)
-    })
-
-    go_click_proteins <- reactive({
-      result <- tryCatch(go_result(), error = function(e) NULL)
-      if (is.null(result)) return(NULL)
-      ego <- result$ego
-
-      d <- plotly::event_data("plotly_click", source = "goDotplot")
-      if (is.null(d)) return(NULL)
-
-      req(quant_data())
-      req(metadata())
-
-      go_id    <- d$key
-      gene_col <- intersect(c("PG.Genes", "Gene_name"), names(metadata()))[1]
-
-      gene_symbols <- if (input$goGeneSet == "core") {
-        ego@result |>
-          dplyr::filter(ID == go_id) |>
-          dplyr::pull(core_enrichment) |>
-          stringr::str_split("/") |>
-          unlist()
-      } else {
-        ego@geneSets[[go_id]]
+      if (isTruthy(metadata())) {
+        meta_slim <- metadata() |>
+          dplyr::mutate(protein = as.character(id)) |>
+          dplyr::select(protein,
+                        dplyr::any_of(c("PG.ProteinDescriptions",
+                                        "PG.Genes",
+                                        "PG.UniProtIds")))
+        results <- dplyr::left_join(results, meta_slim, by = "protein")
       }
 
-      protein_ids <- metadata() |>
-        dplyr::mutate(gene = stringr::str_trim(
-          stringr::str_extract(!!rlang::sym(gene_col), "^[^;]+")
-        )) |>
-        dplyr::filter(gene %in% gene_symbols) |>
-        dplyr::pull(id)
+      results
+    })
 
-      quant_data() |>
-        dplyr::filter(id %in% protein_ids)
+    output$exclusiveDetectionPlot <- renderPlotly({
+      req(exclusive_detection_data())
+
+      plot_exclusive_detection(
+        exclusive_detection_data(),
+        plotly_source = "exclusiveDetection",
+        highlight_ids = highlight_ids()
+      )
     })
 
     # -------------------------------------------------------------------------
