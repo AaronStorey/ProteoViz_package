@@ -2,3 +2,26 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Local run data / sample data folders (may contain patient-linked
+# sample identifiers) - never commit these
+/test_data/
+/Demo/
+StoreyAJ_*/
+
+# Raw data and results exports (design tables, quant/metadata TSVs,
+# summarized output, pulldown lists) - not part of the package source
+*.tsv
+*.csv
+*.xlsx
+*.xls
+*.docx
+
+# Ad hoc / scratch analysis scripts and plot outputs, not package code
+debug_*.R
+*.tiff
+*.jpg
+*.jpeg
+
+# Local tool/editor config, machine-specific
+.claude/
