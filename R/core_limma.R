@@ -353,8 +353,12 @@ write_limma_summary <- function(quant_data, combined_results, metadata, prefix) 
     tidyr::unite("Type", Comparison, Type, sep = " ") |>
     tidyr::pivot_wider(names_from = Type, values_from = Value)
 
+  spread_limma <- spread_limma |>
+    dplyr::mutate(protein = as.character(protein))
+
   out <- metadata |>
-    dplyr::right_join(quant_data, by = "id") |>
+    dplyr::mutate(id = as.character(id)) |>
+    dplyr::right_join(quant_data |> dplyr::mutate(id = as.character(id)), by = "id") |>
     dplyr::left_join(spread_limma, by = c("id" = "protein"))
 
   readr::write_tsv(out, paste0(prefix, "_Summarized_output.tsv"))
