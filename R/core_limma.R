@@ -299,7 +299,7 @@ find_exclusive_proteins <- function(data_matrix, sample_table, comparison,
     n_detected       = dplyr::case_when(
       exclusive_a ~ n_detected_a,
       exclusive_b ~ n_detected_b,
-      TRUE        ~ NA_integer_
+      TRUE        ~ NA_real_
     ),
     n_total_in_group = dplyr::case_when(
       exclusive_a ~ ncol(mat_a),
