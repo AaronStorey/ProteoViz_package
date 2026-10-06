@@ -348,10 +348,50 @@ runApp2 <- function(options = list()){
     )
   }
 
+  Viz_pathway <- {
+    fluidRow(
+      box(
+        title = "Pathway analysis (GO enrichment, selected proteins)",
+        collapsible = TRUE,
+        collapsed = FALSE,
+        width = 12,
+        fluidRow(
+          column(2, actionButton("goEnrichRun", "Run pathway analysis")),
+          column(3, selectInput("goOnt", "Ontology",
+                                choices  = c("Biological Process" = "BP",
+                                             "Molecular Function" = "MF",
+                                             "Cellular Component" = "CC",
+                                             "All"               = "ALL"),
+                                selected = "BP")),
+          column(2, textInput("goPvalueCutoff", "p-value cutoff", value = "0.05")),
+          column(2, textInput("goShowCategory", "Categories to show", value = "20")),
+          column(3, selectInput("goGeneSet", "Heatmap/network gene set",
+                                choices  = c("Significant hits" = "hits",
+                                             "Full term gene set" = "full"),
+                                selected = "hits"))
+        ),
+        helpText("Tests the proteins selected (box/lasso select) on the volcano plot against",
+                 "a background of every identified protein not selected, rather than the",
+                 "full genome annotation database."),
+        tabBox(
+          id    = "goPlotTabs",
+          width = 12,
+          tabPanel("Dot plot",
+                   plotlyOutput("goEnrichPlot", height = "500px")),
+          tabPanel("Network (cnetplot)",
+                   plotOutput("goCnetplot", height = "600px")),
+          tabPanel("Heat plot",
+                   plotOutput("goHeatplot", height = "500px"))
+        )
+      )
+    )
+  }
+
   Viz_tab <- {
     tabItem("Viz",
             Viz_volcano,
-            Viz_heatmap
+            Viz_heatmap,
+            Viz_pathway
     )
   }
 
@@ -706,7 +746,13 @@ runApp2 <- function(options = list()){
       req(design_matrix_df())
       req(contrast_table())
 
-      try(build_contrast_matrix(design_matrix_df(), contrast_table()), silent = TRUE)
+      result <- try(build_contrast_matrix(design_matrix_df(), contrast_table()), silent = TRUE)
+
+      if (inherits(result, "try-error")) {
+        shiny::validate(paste("Could not build the contrast matrix:", conditionMessage(attr(result, "condition"))))
+      }
+
+      result
     })
 
 
@@ -1055,12 +1101,19 @@ runApp2 <- function(options = list()){
         dplyr::filter(Comparison %in% volcanoComparison)
 
       if (isTruthy(metadata())) {
-        meta_slim <- metadata() |>
-          dplyr::mutate(protein = as.character(id)) |>
-          dplyr::select(protein,
-                        dplyr::any_of(c("PG.ProteinDescriptions",
-                                        "PG.Genes",
-                                        "PG.UniProtIds")))
+        meta <- metadata()
+        desc_col    <- intersect(c("PG.ProteinDescriptions", "Description"), names(meta))
+        gene_col    <- intersect(c("PG.Genes", "Gene_name"), names(meta))
+        uniprot_col <- intersect(c("PG.UniProtIds", "Uniprot_ID"), names(meta))
+
+        meta_slim <- meta |>
+          dplyr::mutate(
+            protein                = as.character(id),
+            PG.ProteinDescriptions = if (length(desc_col) > 0) .data[[desc_col[1]]] else NA_character_,
+            PG.Genes                = if (length(gene_col) > 0) .data[[gene_col[1]]] else NA_character_,
+            PG.UniProtIds           = if (length(uniprot_col) > 0) .data[[uniprot_col[1]]] else NA_character_
+          ) |>
+          dplyr::select(protein, PG.ProteinDescriptions, PG.Genes, PG.UniProtIds)
         plot_data <- dplyr::left_join(plot_data, meta_slim, by = "protein")
       }
 
@@ -1094,6 +1147,90 @@ runApp2 <- function(options = list()){
 
       quant_data() %>%
         filter(as.character(id) %in% d$key)
+    })
+
+    # Pathway analysis (GO enrichment) -----------------------------------------
+
+    go_result <- eventReactive(input$goEnrichRun, {
+      req(quant_data())
+      req(metadata())
+      req(selected_data())
+
+      run_go_enrichment(
+        quant_data(), metadata(), selected_data(),
+        ont           = input$goOnt,
+        pvalue_cutoff = as.numeric(input$goPvalueCutoff)
+      )
+    })
+
+    # Unpack ego and gene_list from go_result(); return NULL if not yet computed
+    go_ego <- reactive({
+      r <- tryCatch(go_result(), error = function(e) NULL)
+      if (is.null(r)) NULL else r$ego
+    })
+
+    go_gene_list <- reactive({
+      r <- tryCatch(go_result(), error = function(e) NULL)
+      if (is.null(r)) NULL else r$gene_list
+    })
+
+    go_show_category <- reactive({
+      n <- suppressWarnings(as.integer(input$goShowCategory))
+      if (is.na(n) || n < 1) 20L else n
+    })
+
+    output$goEnrichPlot <- renderPlotly({
+      req(input$goEnrichRun)
+      plot_go_dotplot(go_ego(),
+                      show_category = go_show_category(),
+                      plotly_source = "goDotplot")
+    })
+
+    output$goCnetplot <- renderPlot({
+      req(input$goEnrichRun)
+      plot_go_cnetplot(go_ego(), go_gene_list(),
+                       show_category = go_show_category())
+    })
+
+    output$goHeatplot <- renderPlot({
+      req(input$goEnrichRun)
+      plot_go_heatplot(go_ego(), go_gene_list(),
+                       show_category = go_show_category())
+    })
+
+    go_click_proteins <- reactive({
+      result <- tryCatch(go_result(), error = function(e) NULL)
+      if (is.null(result)) return(NULL)
+      ego <- result$ego
+
+      d <- plotly::event_data("plotly_click", source = "goDotplot")
+      if (is.null(d)) return(NULL)
+
+      req(quant_data())
+      req(metadata())
+
+      go_id    <- d$key
+      gene_col <- pick_populated_column(metadata(), c("PG.Genes", "Gene_name"))
+
+      gene_symbols <- if (input$goGeneSet == "hits") {
+        ego@result |>
+          dplyr::filter(ID == go_id) |>
+          dplyr::pull(geneID) |>
+          stringr::str_split("/") |>
+          unlist()
+      } else {
+        ego@geneSets[[go_id]]
+      }
+
+      protein_ids <- metadata() |>
+        dplyr::mutate(gene = stringr::str_trim(
+          stringr::str_extract(!!rlang::sym(gene_col), "^[^;]+")
+        )) |>
+        dplyr::filter(gene %in% gene_symbols) |>
+        dplyr::pull(id)
+
+      quant_data() |>
+        dplyr::filter(id %in% protein_ids)
     })
 
     # Clicking a point on either the volcano plot or the exclusive-detection
@@ -1179,8 +1316,13 @@ runApp2 <- function(options = list()){
       req(quant_data())
       req(sample_table_df())
 
-      req(selected_data())
-      heat_ids <- selected_data()$id
+      # GO dotplot click takes priority; fall back to volcano box selection
+      heat_ids <- if (isTruthy(go_click_proteins()) && nrow(go_click_proteins()) > 0) {
+        go_click_proteins()$id
+      } else {
+        req(selected_data())
+        selected_data()$id
+      }
 
       quant_long <- quant_data() |>
         tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
@@ -1250,7 +1392,13 @@ runApp2 <- function(options = list()){
       req(input$phcheck)
       req(quant_data())
       req(sample_table_df())
-      req(selected_data())
+
+      heat_ids <- if (isTruthy(go_click_proteins()) && nrow(go_click_proteins()) > 0) {
+        go_click_proteins()$id
+      } else {
+        req(selected_data())
+        selected_data()$id
+      }
 
       quant_long <- quant_data() |>
         tidyr::pivot_longer(-id, names_to = "Sample_name", values_to = "Intensity")
@@ -1258,7 +1406,7 @@ runApp2 <- function(options = list()){
       plot_protein_heatmap(
         quant_long,
         sample_table_df(),
-        proteins       = selected_data()$id,
+        proteins       = heat_ids,
         protein_anno   = metadata(),
         scale_rows     = input$phscalecheck,
         exclude_groups = excluded_groups()

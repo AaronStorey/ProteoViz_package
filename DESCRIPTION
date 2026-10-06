@@ -42,8 +42,7 @@ Imports:
     viridisLite,
     clusterProfiler,
     enrichplot,
-    org.Hs.eg.db,
-    BiocParallel
+    org.Hs.eg.db
 Suggests:
     devtools
 RoxygenNote: 7.3.3
