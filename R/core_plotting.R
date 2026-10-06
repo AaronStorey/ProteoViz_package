@@ -824,10 +824,10 @@ plot_protein_heatmap <- function(data,
 #' @param peptide_data A long-form tibble with columns \code{id},
 #'   \code{Sample_name}, and \code{Intensity}.
 #' @param metadata A tibble with columns \code{Sample_name} and \code{Group}.
-#' @param proteins A character vector of protein accession identifiers.
-#' @param peptide_metadata A tibble of peptide annotations with columns
-#'   \code{id} and \code{PG.ProteinAccessions}. Optionally a \code{Sequence}
-#'   column provides row labels.
+#' @param proteins A character vector of protein identifiers, used only for
+#'   the error message when \code{peptide_data} contains no matching rows.
+#' @param peptide_metadata A tibble of peptide annotations with an \code{id}
+#'   column. Optionally a \code{Sequence} column provides row labels.
 #' @param scale_rows Logical. If \code{TRUE} rows are z-score scaled and the
 #'   blue-white-red gradient is used; if \code{FALSE} raw intensities are shown
 #'   with the viridis palette. Default \code{TRUE}.
@@ -863,12 +863,16 @@ plot_peptide_heatmap <- function(peptide_data,
     metadata     <- dplyr::filter(metadata, Sample_name %in% keep_samples)
   }
 
-  protein_pattern <- paste(proteins, collapse = "|")
-
-  matching_ids <- peptide_metadata |>
-    dplyr::filter(grepl(protein_pattern, PG.ProteinAccessions, fixed = FALSE)) |>
+  # peptide_data has already been scoped to the clicked protein(s) upstream
+  # (via the format-aware protein -> peptide join in peptide_click_data()), so
+  # matching peptides are read directly from it rather than re-deriving them
+  # here from peptide_metadata's accession column, whose name varies by
+  # search engine (e.g. PG.ProteinAccessions for Spectronaut vs.
+  # Protein_Accessions for ScaffoldDIA/DIA).
+  matching_ids <- peptide_data |>
     dplyr::pull(id) |>
-    as.character()
+    as.character() |>
+    unique()
 
   if (length(matching_ids) == 0) {
     stop(
